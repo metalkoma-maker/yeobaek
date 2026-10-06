@@ -1,0 +1,161 @@
+import os, sqlite3, secrets, hashlib, hmac, time, re
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from flask import Flask, request, jsonify, send_from_directory, g
+
+app = Flask(__name__, static_folder='static')
+app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024
+DB = os.environ.get('DATABASE_PATH', 'data/novel.sqlite3')
+SECURE = os.environ.get('COOKIE_SECURE', '0') == '1'
+
+def db():
+    if 'db' not in g:
+        os.makedirs(os.path.dirname(os.path.abspath(DB)), exist_ok=True)
+        g.db = sqlite3.connect(DB, timeout=15)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute('PRAGMA foreign_keys=ON')
+    return g.db
+
+@app.teardown_appcontext
+def close(error):
+    if 'db' in g: g.db.close()
+
+def init():
+    with app.app_context():
+        db().executescript('''
+        PRAGMA journal_mode=WAL;
+        CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,csrf TEXT NOT NULL,expires INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS manuscripts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 0,updated INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS manuscript_history(manuscript_id TEXT NOT NULL REFERENCES manuscripts(id) ON DELETE CASCADE,version INTEGER NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(manuscript_id,version));
+        CREATE TABLE IF NOT EXISTS daily(manuscript_id TEXT REFERENCES manuscripts(id) ON DELETE CASCADE,day TEXT NOT NULL,delta INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(manuscript_id,day));
+        CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,started INTEGER NOT NULL,count INTEGER NOT NULL);
+        ''')
+        db().commit()
+
+def day(): return datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
+def count(text): return len(re.sub(r'\s', '', text))
+def digest(password, salt): return hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex()
+def fail(msg, code=400): return jsonify(error=msg), code
+
+@app.before_request
+def guard():
+    if not request.path.startswith('/api/'): return
+    if request.method != 'GET':
+        origin = request.headers.get('Origin')
+        if origin and origin != request.host_url.rstrip('/'): return fail('허용되지 않는 요청입니다.',403)
+        if not request.is_json: return fail('JSON 요청이 필요합니다.',415)
+    g.user = None
+    raw = request.cookies.get('novel_session','')
+    row = db().execute('SELECT s.*,u.email FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>?',(hashlib.sha256(raw.encode()).hexdigest(),int(time.time()))).fetchone()
+    if row: g.user = dict(row)
+    if request.path not in ['/api/register','/api/login','/api/me']:
+        if not g.user: return fail('로그인이 필요합니다.',401)
+        if request.method != 'GET' and not hmac.compare_digest(request.headers.get('X-CSRF-Token',''),g.user['csrf']): return fail('다시 로그인해 주세요.',403)
+
+@app.after_request
+def headers(response):
+    response.headers['X-Content-Type-Options']='nosniff'
+    response.headers['Referrer-Policy']='same-origin'
+    response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    if request.path.startswith('/api/'): response.headers['Cache-Control']='no-store'
+    return response
+
+def session_response(uid,email):
+    token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    db().execute('INSERT INTO sessions VALUES(?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),uid,csrf,int(time.time())+60*60*24*30))
+    db().commit()
+    response=jsonify(email=email,csrf=csrf,is_admin=app.is_admin({'user_id':uid}))
+    response.set_cookie('novel_session',token,max_age=2592000,httponly=True,secure=SECURE,samesite='Lax')
+    return response
+
+@app.post('/api/<action>')
+def auth(action):
+    if action not in ['login','register']: return fail('없는 경로입니다.',404)
+    data=request.get_json() or {}
+    email=data.get('email',''); password=data.get('password','')
+    if not isinstance(email,str) or not isinstance(password,str): return fail('입력값을 확인해 주세요.')
+    email=email.strip().lower()
+    if len(email)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email) or not 10<=len(password)<=256: return fail('이메일과 10자 이상의 비밀번호를 입력해 주세요.')
+    key=hashlib.sha256((request.remote_addr+'|'+email).encode()).hexdigest(); now=int(time.time())
+    db().execute('INSERT INTO attempts VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN started<? THEN 1 ELSE count+1 END,started=CASE WHEN started<? THEN excluded.started ELSE started END',(key,now,now-900,now-900))
+    db().commit()
+    if db().execute('SELECT count FROM attempts WHERE key=?',(key,)).fetchone()[0]>15: return fail('시도가 많습니다. 15분 후 다시 시도해 주세요.',429)
+    if action=='register':
+        salt=secrets.token_hex(16); uid=secrets.token_hex(16)
+        try:
+            db().execute('INSERT INTO users VALUES(?,?,?)',(uid,email,salt+':'+digest(password,salt)))
+            db().execute('INSERT INTO user_metadata(user_id,created) VALUES(?,?)',(uid,now)); db().commit()
+        except sqlite3.IntegrityError: return fail('가입할 수 없는 이메일입니다.',409)
+    else:
+        row=db().execute('SELECT * FROM users WHERE email=?',(email,)).fetchone()
+        salt,expected = row['password'].split(':') if row else ('00'*16,'')
+        if not hmac.compare_digest(digest(password,salt),expected): return fail('이메일 또는 비밀번호를 확인해 주세요.',401)
+        uid=row['id']
+    return session_response(uid,email)
+
+@app.get('/api/me')
+def me(): return jsonify(email=g.user['email'],csrf=g.user['csrf'],is_admin=app.is_admin(g.user)) if g.user else fail('로그인이 필요합니다.',401)
+
+@app.post('/api/logout')
+def logout():
+    db().execute('DELETE FROM sessions WHERE token=?',(g.user['token'],)); db().commit()
+    response=jsonify(ok=True); response.delete_cookie('novel_session',secure=SECURE,samesite='Lax'); return response
+
+def owned(mid): return db().execute('SELECT * FROM manuscripts WHERE id=? AND user_id=?',(mid,g.user['user_id'])).fetchone()
+def pack(row):
+    data=dict(row); data.pop('user_id',None)
+    delta=db().execute('SELECT delta FROM daily WHERE manuscript_id=? AND day=?',(data['id'],day())).fetchone()
+    data.update(total=count(data['body']),today=delta[0] if delta else 0,day=day())
+    return data
+
+@app.route('/api/manuscripts',methods=['GET','POST'])
+def manuscripts():
+    if request.method=='GET': return jsonify([pack(x) for x in db().execute('SELECT * FROM manuscripts WHERE user_id=? ORDER BY updated DESC',(g.user['user_id'],)).fetchall()])
+    mid=secrets.token_hex(16)
+    db().execute('INSERT INTO manuscripts(id,user_id,title,updated) VALUES(?,?,?,?)',(mid,g.user['user_id'],'제목 없는 원고',int(time.time()))); db().commit()
+    return jsonify(pack(owned(mid))),201
+
+@app.route('/api/manuscripts/<mid>',methods=['GET','PUT'])
+def manuscript(mid):
+    if request.method=='GET':
+        row=owned(mid)
+        return jsonify(pack(row)) if row else fail('원고를 찾을 수 없습니다.',404)
+    data=request.get_json() or {}; title=data.get('title'); body=data.get('body'); version=data.get('version')
+    if not isinstance(title,str) or not isinstance(body,str) or not isinstance(version,int) or len(title)>200 or len(body)>1000000: return fail('제목 또는 원고 길이를 확인해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    row=owned(mid)
+    if not row: db().rollback(); return fail('원고를 찾을 수 없습니다.',404)
+    if row['version']!=version:
+        result=pack(row); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
+    if title == row['title'] and body == row['body']:
+        result=pack(row); db().rollback(); return jsonify(result)
+    db().execute('INSERT OR IGNORE INTO manuscript_history VALUES(?,?,?,?,?)',(mid,row['version'],row['title'],row['body'],row['updated']))
+    db().execute('DELETE FROM manuscript_history WHERE manuscript_id=? AND version NOT IN (SELECT version FROM manuscript_history WHERE manuscript_id=? ORDER BY version DESC LIMIT 50)',(mid,mid))
+    delta=count(body)-count(row['body'])
+    db().execute('UPDATE manuscripts SET title=?,body=?,version=version+1,updated=? WHERE id=?',(title,body,int(time.time()),mid))
+    db().execute('INSERT INTO daily VALUES(?,?,?) ON CONFLICT(manuscript_id,day) DO UPDATE SET delta=delta+excluded.delta',(mid,day(),delta))
+    db().commit(); return jsonify(pack(owned(mid)))
+
+
+@app.get('/api/manuscripts/<mid>/history')
+def history(mid):
+    if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
+    rows=db().execute('SELECT version,title,updated,length(body) AS characters FROM manuscript_history WHERE manuscript_id=? ORDER BY version DESC LIMIT 50',(mid,)).fetchall()
+    return jsonify([dict(x) for x in rows])
+
+@app.get('/api/manuscripts/<mid>/history/<int:version>')
+def history_item(mid,version):
+    if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
+    row=db().execute('SELECT version,title,body,updated FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
+    return jsonify(dict(row)) if row else fail('수정 이력을 찾을 수 없습니다.',404)
+
+@app.get('/')
+def index(): return send_from_directory('static','index.html')
+@app.get('/<path:path>')
+def assets(path): return send_from_directory('static',path)
+
+init()
+from admin_panel import register_admin
+register_admin(app, db, DB)
+if __name__=='__main__': app.run(host='0.0.0.0',port=int(os.environ.get('PORT','8000')),debug=False)
