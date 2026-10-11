@@ -59,3 +59,12 @@ nav .modifiedDate{display:block;margin-top:5px;font-size:11px;line-height:1.5}
 #safetyDialog{width:min(600px,calc(100% - 24px));max-height:80dvh;border:1px solid #dce3eb;border-radius:12px;color:#172b44;padding:24px}#safetyDialog::backdrop{background:#172b4466}#safetyHelp{line-height:1.7;color:#64758b}#safetyItems{display:grid;gap:8px;max-height:50dvh;overflow:auto;margin-bottom:16px}#safetyItems button{text-align:left;overflow-wrap:anywhere}header{flex-wrap:wrap}
 
 #recoveryBanner{margin:12px 24px 0;padding:12px 16px;background:#f5f3ef;border-radius:8px;display:flex;align-items:center;gap:12px;font-size:13px}#recoveryBanner div{flex:1}#recoveryBanner small{display:block;margin-top:5px;color:#718096}#recoveryBanner button{font-size:12px}#safetyDialog:has(.recoveryGrid){width:min(1000px,calc(100% - 24px))}.recoveryGrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.recoveryGrid section{min-width:0}.recoveryGrid h3{font-size:15px}.recoveryGrid b{display:block;overflow-wrap:anywhere}.recoveryGrid textarea{width:100%;height:260px;resize:vertical;margin:12px 0;padding:12px;border:1px solid #dce3eb;border-radius:8px;font-size:14px;line-height:1.8;color:#27384c;background:white}@media(max-width:720px){#recoveryBanner{margin:8px 12px 0;flex-wrap:wrap}.recoveryGrid{grid-template-columns:1fr}.recoveryGrid textarea{height:160px}}
+
+/* One manuscript scroll pane: title consumes no fixed space while reading. */
+.writing>header,.writing>footer{flex-shrink:0}
+#editor{display:block;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;scrollbar-color:#d9dfe6 transparent}
+#body{display:block;flex:none;height:auto;min-height:calc(100dvh - 300px);overflow:hidden;scrollbar-gutter:auto}
+header .editArrow{width:32px;height:32px;padding:0;font-size:24px;line-height:1;border:0;background:transparent;flex-shrink:0}
+header .editArrow:disabled{cursor:default}
+header .editArrow:hover:not(:disabled){background:#edf2f7}
+@media(max-width:720px){header{gap:6px}#body{min-height:calc(100dvh - 330px)}}

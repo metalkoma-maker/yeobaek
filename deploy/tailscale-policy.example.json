@@ -1,0 +1,24 @@
+{
+  "tagOwners": {
+    "tag:yeobaek-ci": ["autogroup:admin"],
+    "tag:yeobaek-server": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["tag:yeobaek-ci"],
+      "dst": ["tag:yeobaek-server"],
+      "ip": ["tcp:22"]
+    }
+  ],
+  "tests": [
+    {
+      "src": "tag:yeobaek-ci",
+      "accept": ["tag:yeobaek-server:22"],
+      "deny": ["tag:yeobaek-server:80", "tag:yeobaek-server:443", "tag:yeobaek-server:8000"]
+    },
+    {
+      "src": "tag:yeobaek-server",
+      "deny": ["tag:yeobaek-ci:22"]
+    }
+  ]
+}

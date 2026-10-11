@@ -1,0 +1,120 @@
+name: 여백 웹 수동 배포
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'inspect=조회만 / deploy=웹 배포 / rollback=직전 배포 복원'
+        type: choice
+        options: [inspect, deploy, rollback]
+        default: inspect
+        required: true
+      expected_fingerprint:
+        description: 'deploy/rollback에 필요: 직전 inspect 결과의 fingerprint (64자리)'
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: yeobaek-production-web
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: 가짜 데이터 단위 검증
+        run: |
+          python3 -m venv "$RUNNER_TEMP/test-venv"
+          "$RUNNER_TEMP/test-venv/bin/pip" install -r requirements.txt
+          "$RUNNER_TEMP/test-venv/bin/python" -m unittest discover -s tests -v
+      - name: 브라우저 검증 도구
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.56.1
+          test -x /usr/bin/google-chrome
+      - name: PC·모바일 웹 및 연속 삭제 검증 (가짜 API)
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
+          node tests/browser_web_input.cjs
+          node tests/browser_web_writing.cjs
+  production:
+    needs: verify
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: 입력과 SSH 설정 검증
+        env:
+          DEPLOY_ACTION: ${{ inputs.action }}
+          EXPECTED: ${{ inputs.expected_fingerprint }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          TS_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          case "$DEPLOY_ACTION" in inspect|deploy|rollback) ;; *) exit 1 ;; esac
+          if [[ "$DEPLOY_ACTION" != inspect && ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
+            echo 'inspect 결과의 fingerprint를 먼저 입력하세요.' >&2
+            exit 1
+          fi
+          test -n "$SSH_KEY"
+          test -n "$KNOWN_HOSTS"
+          test -n "$TS_CLIENT_ID"
+          test -n "$TS_SECRET"
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/yeobaek-key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/yeobaek-known-hosts"
+          ssh-keygen -y -f "$RUNNER_TEMP/yeobaek-key" > /dev/null
+          ssh-keygen -F "$DEPLOY_HOST" -f "$RUNNER_TEMP/yeobaek-known-hosts" > /dev/null
+          # Fail closed: the runner must use a Tailscale IPv4, never public SSH.
+          python3 - <<'PY'
+          import ipaddress, os
+          address = ipaddress.ip_address(os.environ['DEPLOY_HOST'])
+          if address not in ipaddress.ip_network('100.64.0.0/10'):
+              raise SystemExit('DEPLOY_HOST에는 서버의 Tailscale IPv4를 설정하세요.')
+          PY
+      - name: 배포 전용 임시 VPN 연결
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:yeobaek-ci
+          version: '1.94.2'
+          args: --accept-dns=false --accept-routes=false --ssh=false
+          ping: ${{ vars.DEPLOY_HOST }}
+          use-cache: 'false'
+          log-mode: quiet
+      - name: 수동 작업 실행 (서버에서 백업·건강 확인·실패 복원)
+        env:
+          DEPLOY_ACTION: ${{ inputs.action }}
+          EXPECTED: ${{ inputs.expected_fingerprint }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote=(ssh -T -p 22 -i "$RUNNER_TEMP/yeobaek-key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/yeobaek-known-hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 "yeobaek-deploy@$DEPLOY_HOST")
+          case "$DEPLOY_ACTION" in
+            inspect) "${remote[@]}" inspect ;;
+            deploy)
+              python3 deploy/build_release.py --commit "$GITHUB_SHA" --output "$RUNNER_TEMP/release.zip"
+              "${remote[@]}" "deploy $EXPECTED" < "$RUNNER_TEMP/release.zip"
+              ;;
+            rollback) "${remote[@]}" "rollback $EXPECTED" ;;
+          esac
+      - name: 개인키 임시 파일 제거
+        if: always()
+        shell: bash
+        run: |
+          rm -f -- "$RUNNER_TEMP/yeobaek-key" "$RUNNER_TEMP/yeobaek-known-hosts" "$RUNNER_TEMP/release.zip"
