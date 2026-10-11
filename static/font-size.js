@@ -5,6 +5,7 @@
  function apply(size){
   if(!sizes.includes(size))size=12;
   body.dataset.fontSize=String(size);
+  body.dispatchEvent(new Event('yeobaek-font-change'));
   buttons.forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.size)===size)));
   toggle.setAttribute('aria-label',`본문 글자 크기 조정, 현재 ${size}포인트`);
  }

@@ -18,3 +18,13 @@ node_modules/
 .expo/
 dist/
 *.zip
+
+# Local-only production connection metadata; never commit SSH credentials.
+.deploy/
+
+# Server-specific audit/setup notes stay local, outside the public repository.
+/deploy/audit/
+/deploy/install-actions.sh
+/deploy/target.example.json
+/docs/github-actions-deployment-status.md
+/docs/github-actions-windows-guide.md
