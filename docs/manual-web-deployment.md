@@ -8,15 +8,18 @@
 
 ## 최초 설정
 
-1. 클라우드 콘솔에서 SSH 허용 IP를 확인합니다. 기존 접근 제어를 변경하지 않습니다. GitHub 호스팅 실행기는 IP가 유동적이므로 좁은 허용 범위라면 별도 고정 IP 실행기/VPN 설계가 먼저 필요합니다.
+1. 기존 SSH 허용 IP를 유지하고 Tailscale VPN으로 연결합니다. 서버는 Tailscale에 상시 연결하고 GitHub 호스팅 실행기는 배포 작업 때만 임시 장치로 연결합니다. 공개 SSH로 우회 접속하지 않습니다. 새로운 인바운드 ACG 규칙은 추가하지 않습니다.
 2. 사용자 PC에서 배포 전용 Ed25519 키를 생성합니다. 개인키는 GitHub Environment secret에만 등록하고 서버에는 공개키만 설치합니다.
 3. 별도 제공된 설치 패키지로 제한된 배포 계정/강제 명령을 설치합니다. 이 도구는 root 소유 설정 `/etc/yeobaek-actions.json`에서 프로젝트·백업 경로, HTTPS 호스트, 서비스 이름을 읽습니다. SSH 명령으로 설정을 변경할 수 없습니다.
-4. GitHub `production` Environment를 만들고 main 브랜치만 허용합니다. 가능하면 필수 검토자를 설정합니다. secret `DEPLOY_SSH_KEY`, variables `DEPLOY_HOST`와 `DEPLOY_KNOWN_HOSTS`를 등록합니다. 호스트 키는 기존 신뢰한 관리자 연결에서 확인합니다.
-5. 워크플로를 main에 반영한 뒤 수동 inspect부터 실행합니다. 설치 완료 및 실제 접속 확인 전에는 deploy를 실행하지 않습니다.
+4. Tailscale 정책으로 `tag:yeobaek-ci`에서 `tag:yeobaek-server`의 TCP 22만 허용합니다. OAuth 클라이언트는 auth_keys 쓰기 권한과 CI 태그만 지정합니다. 서버 태그를 발급할 권한은 CI 자격증명에 주지 않습니다. Tailscale SSH/서브넷 라우터/exit node는 사용하지 않습니다.
+5. GitHub `production` Environment를 만들고 main 브랜치만 허용합니다. 가능하면 필수 검토자를 설정합니다. secrets `DEPLOY_SSH_KEY`, `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, variables `DEPLOY_HOST`와 `DEPLOY_KNOWN_HOSTS`를 등록합니다. DEPLOY_HOST는 서버의 Tailscale IPv4(100.64.0.0/10)이며 공개 주소를 입력하면 작업이 중단됩니다. 같은 OpenSSH 서버의 호스트 키를 기존 신뢰한 관리자 연결에서 확인해 이 VPN 주소에 고정합니다.
+6. 워크플로를 main에 반영한 뒤 수동 inspect부터 실행합니다. 설치 완료 및 실제 접속 확인 전에는 deploy를 실행하지 않습니다. 서버에 운영 DB를 열거나 웹을 교체하기 위해 VPN을 설치하는 것은 아닙니다. 기존 앱 설정과 자동 백업을 유지한 채 별도 VPN 서비스를 추가합니다.
 
 ## 실행과 복원
 
 Actions → 여백 웹 수동 배포 → Run workflow. 기본 inspect는 코드 조회만 수행합니다. deploy/rollback은 바로 전 inspect의 fingerprint를 요구합니다. 조회 이후 코드가 바뀌면 중단합니다. 원고의 편집은 코드 해시에 영향을 주지 않습니다.
+
+VPN 연결은 production 승인 이후 시작합니다. Tailscale 공식 action을 커밋 SHA로 고정하고 임시 장치 자동 로그아웃/정리를 사용합니다. VPN 연결이 실패하면 서버 작업을 시작하지 않습니다. 정책 예제는 `deploy/tailscale-policy.example.json`입니다. 신규 전용 tailnet에만 전체 정책으로 적용하며, 기존 네트워크의 정책은 검토 없이 덮어쓰지 않습니다. 기본 전체 허용 규칙과 합치면 TCP 22 제한이 무효가 될 수 있습니다.
 
 가짜 DB와 Chromium 검증이 먼저 통과해야 서버 작업으로 진행합니다. 배포 파일은 edit-history.js, font-size.js, safety-storage.js, app.js, style.css, index.html입니다. 서버에서는 승인된 배포 제외 코드의 변경 여부까지 확인하고, 웹 파일을 별도 백업한 뒤 소유자/그룹/권한을 보존해 교체합니다. index.html은 마지막에 교체합니다.
 
