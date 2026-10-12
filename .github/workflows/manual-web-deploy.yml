@@ -92,10 +92,14 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:yeobaek-ci
           version: '1.94.2'
-          args: --accept-dns=false --accept-routes=false --ssh=false
+          # The official action supplies --accept-routes; do not duplicate it.
+          args: --accept-dns=false --ssh=false
           ping: ${{ vars.DEPLOY_HOST }}
           use-cache: 'false'
           log-mode: quiet
+      - name: 실행기의 서브넷 경로 수신 끄기
+        shell: bash
+        run: sudo tailscale set --accept-routes=false
       - name: 수동 작업 실행 (서버에서 백업·건강 확인·실패 복원)
         env:
           DEPLOY_ACTION: ${{ inputs.action }}
