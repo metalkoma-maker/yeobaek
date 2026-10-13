@@ -13,7 +13,7 @@ Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 �
 | 현재 Codex ngrok 터널 | 소스의 제3자 공개 우려로 자동 승인 검토가 거부해 연결 시험 미실행 |
 | PC 없이 iPhone 테스트 | 별도 GitHub Codespaces 실행 중 가능하도록 구성. Expo 무료 계정 및 실제 아이폰 연결 확인 필요 |
 
-Mac, Xcode, 유료 Apple 개발자 계정 없이 시작하기 위해 **SDK 54**를 사용합니다. 기존 개발 초안의 SDK 57은 App Store Expo Go와 맞지 않아 수정했습니다. 현재 공식 안내는 App Store Expo Go가 SDK 54까지 지원하고, 이후 SDK의 iPhone 설치는 개발자 계정이 필요한 별도 경로를 요구한다고 설명합니다. [공식 SDK 호환 안내](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/)
+**SDK 57**을 사용합니다. 2026-10-13 사용자의 실제 iPhone Expo Go 화면이 지원 SDK를 57.0.0으로 표시했고, SDK54 프로젝트를 거부한 것을 확인해 의존성을 맞췄습니다. 앞서 읽은 공식 문서의 App Store 지원 버전 설명과 실기기가 달랐으므로 이 앱은 실기기 정보를 우선합니다. Expo Go의 지원 SDK와 프로젝트 SDK가 같아야 합니다. Expo Go로 테스트하는 현재 경로에 Mac, Xcode, 유료 Apple 개발자 계정은 필요하지 않습니다. [SDK 불일치 개념](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/)
 
 ## 권장: GitHub Codespaces 한 개에서 앱 + 가짜 웹 실행
 
@@ -21,7 +21,7 @@ Codespaces는 현재 Codex 작업 공간과 다른 클라우드 컴퓨터입니�
 
 ### 1. 아이폰과 무료 Expo 계정
 
-1. iPhone App Store에서 **Expo Go**를 설치합니다. 앱의 SDK 지원 정보가 54인지 확인합니다.
+1. iPhone App Store에서 **Expo Go**를 설치합니다. 현재 프로젝트 SDK57과 앱에 표시되는 지원 SDK가 같은지 확인합니다. 불일치 오류가 나오면 그 화면의 버전을 기준으로 프로젝트를 맞춥니다.
 2. https://expo.dev/signup 에서 무료 Expo 계정을 만듭니다. 기존 계정이 있으면 그대로 사용합니다.
 3. Expo Go의 계정 메뉴에서 로그인합니다. 같은 계정으로 아래 Codespaces의 Expo CLI도 로그인해야 합니다. 비밀번호/인증 토큰을 채팅이나 저장소에 넣지 않습니다. [실제 iPhone의 동일 계정 로그인 요구](https://docs.expo.dev/troubleshooting/expo-go-sign-in-required/)
 
@@ -94,7 +94,7 @@ Expo 무료 계정은 앱을 여는 계정이고 위 가짜 Flask 계정은 원�
 - PC가 꺼져도 별도 Codespace가 실행 중이면 앱의 코드/가짜 API를 제공합니다. Codespace가 정지되면 새 앱 로딩과 서버 저장이 중단됩니다. 이미 열어 쓴 내용은 기기에 보관하고 다시 저장할 수 있습니다.
 - 기본 idle timeout은 30분이며 사용자 설정에서 최대 240분까지 가능합니다. GitHub Settings → Codespaces의 timeout을 필요한 테스트 길이만큼 설정합니다. 중지 후에는 Codespace를 다시 시작하고 위 시작 명령을 다시 실행합니다. 재시작 뒤 가짜 DB는 새 DB이므로 이전 테스트 원고가 서버에 이어지는 것은 아닙니다. [공식 timeout 안내](https://docs.github.com/en/codespaces/setting-your-user-preferences/setting-your-timeout-period-for-github-codespaces)
 - GitHub Free 개인 계정의 월 무료분은 **120 core-hours**와 **15 GB-month**입니다. 2-core면 실행 시간 약 **60시간**에 해당합니다. 초과 시 2-core 계산 비용은 **시간당 USD 0.18**, 저장소는 **GB-month당 USD 0.07**입니다. 멈춘 Codespace도 저장공간을 사용합니다. 결제 수단/예산 설정에 따라 초과 시 중지되거나 청구될 수 있으므로 Billing에서 확인하고, 테스트 뒤 Stop합니다. [공식 비용](https://docs.github.com/en/billing/concepts/product-billing/github-codespaces)
-- Expo 계정/SDK54 Expo Go로 테스트하는 데 Apple 개발자 가입이나 iOS 빌드 비용은 필요하지 않습니다. 무료 플랜의 현재 제한은 가입 화면에서 확인합니다.
+- Expo 계정/호환되는 Expo Go로 테스트하는 데 Apple 개발자 가입이나 iOS 빌드 비용은 필요하지 않습니다. 무료 플랜의 현재 제한은 가입 화면에서 확인합니다.
 - **24시간 항상 실행**이 필요하면 Codespaces 세션 방식으로 보장할 수 없습니다. 별도의 상시 개발/테스트 서버와 고정 HTTPS 연결이 필요하며 서버·스토리지 비용이 별도로 생깁니다. 기존 운영 서버나 기존 배포 VPN 정책을 이 목적으로 바꾸지 않았습니다.
 
 EAS Update로 앱 JavaScript를 게시하면 Metro를 항상 실행할 필요를 줄일 수 있습니다. 다만 사용자 소유 Expo 프로젝트/게시 인증이 필요하고, 로그인·자동저장을 제공하는 별도 API 서버는 여전히 필요합니다. 앱 번들만 게시해서 원고 API까지 실행되는 것은 아닙니다. iPhone의 Expo Go에서는 본인/소속 조직의 프로젝트만 로딩할 수 있다는 현재 제한도 있습니다. 이번에는 이 추가 게시 구성을 만들지 않았습니다. [EAS Update 제한](https://expo.dev/changelog/expo-go-loading-changes-may-2026), [Expo 비용](https://expo.dev/pricing)
@@ -132,3 +132,21 @@ npm run export:ios
 ```
 
 `export:ios`는 JS 번들 검증이며 서명된 iPhone 앱이나 TestFlight 배포가 아닙니다. 현재 Codex에서 테스트/번들/로컬 서버 응답을 검증했지만, 실제 Codespaces의 Public 포트와 iPhone Expo Go 연결·쿠키·키보드는 사용자 환경에서 아직 확인하지 않았습니다. 이 구성을 완전한 24시간 테스트 서비스라고 설명하지 않습니다.
+
+## 이미 만든 Codespace에서 SDK 수정 반영
+
+실행 중인 서버 터미널에서 Ctrl+C로 중지한 뒤 저장소 루트에서 한 줄씩 실행합니다. git pull이 충돌이나 로컬 변경 오류로 멈추면 강제 초기화하지 않습니다. git pull은 현재 체크아웃한 모바일 브랜치를 업데이트합니다.
+
+```bash
+git pull --ff-only
+```
+
+```bash
+npm --prefix mobile ci
+```
+
+```bash
+bash tools/start_mobile_codespace.sh
+```
+
+기존 Expo 로그인/공유 포트/서버 주소는 그대로 사용합니다. 테스트 서버 재시작은 새 가짜 DB를 만들므로 가짜 원고는 초기화됩니다. 설치된 Expo Go를 삭제하거나 오래된 버전으로 바꾸지 않습니다. 이 변경은 운영 웹/DB에 배포되지 않습니다.
