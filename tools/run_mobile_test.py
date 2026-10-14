@@ -6,16 +6,20 @@ import sys
 import tempfile
 from html import escape
 from pathlib import Path
+from mobile_test_proxy import configured_origin, SyntheticPublicOrigin
 
 
 def main():
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root))
+    origin = configured_origin()
     # Set before importing app: importing it initializes its configured DB.
     with tempfile.TemporaryDirectory(prefix='yeobaek-mobile-test-') as directory:
         os.environ['DATABASE_PATH'] = str(Path(directory) / 'synthetic.sqlite3')
-        os.environ['COOKIE_SECURE'] = '0'
+        os.environ['COOKIE_SECURE'] = '1' if origin else '0'
         import app as module
+        if origin:
+            module.app.wsgi_app = SyntheticPublicOrigin(module.app.wsgi_app, origin)
         @module.app.get('/__mobile_test__')
         def test_marker():
             return {'syntheticOnly': True, 'protocol': 'yeobaek-mobile-test-v1'}
