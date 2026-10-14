@@ -4,9 +4,12 @@ No backup scripts, deployment or production database access.
 import os
 import sys
 import tempfile
+import secrets
 from html import escape
 from pathlib import Path
 from mobile_test_proxy import configured_origin, SyntheticPublicOrigin
+
+TEST_RUNNER_VERSION = 'codespaces-origin-v2'
 
 
 def main():
@@ -18,11 +21,27 @@ def main():
         os.environ['DATABASE_PATH'] = str(Path(directory) / 'synthetic.sqlite3')
         os.environ['COOKIE_SECURE'] = '1' if origin else '0'
         import app as module
+        from flask import request
         if origin:
             module.app.wsgi_app = SyntheticPublicOrigin(module.app.wsgi_app, origin)
+        run_id = os.environ.get('YEOBAEK_TEST_RUN_ID') or secrets.token_hex(16)
         @module.app.get('/__mobile_test__')
         def test_marker():
-            return {'syntheticOnly': True, 'protocol': 'yeobaek-mobile-test-v1'}
+            return {'syntheticOnly': True, 'protocol': 'yeobaek-mobile-test-v1',
+                    'runnerVersion': TEST_RUNNER_VERSION, 'runId': run_id,
+                    'publicOrigin': origin}
+
+        @module.app.after_request
+        def test_origin_diagnostic(response):
+            if (request.path.startswith('/api/') and response.status_code == 403
+                    and request.headers.get('Origin') != request.host_url.rstrip('/')):
+                # Only origins and Fetch Metadata, never credentials, cookies,
+                # document bodies, or Referer paths/query strings.
+                received = request.environ.get('yeobaek.test_received_origin', '')[:200]
+                print('TEST_ORIGIN_REJECTED received=' + repr(received)
+                      + ' expected=' + repr(request.host_url.rstrip('/'))
+                      + ' site=' + repr(request.headers.get('Sec-Fetch-Site', '')[:30]), flush=True)
+            return response
 
         @module.app.get('/_mobile/open')
         def open_mobile():
@@ -46,6 +65,7 @@ def main():
                 raise RuntimeError('Could not create synthetic test manuscript')
         module.app.config['TESTING'] = False
         print('Synthetic-only test server: http://0.0.0.0:8000')
+        print('Test runner: ' + TEST_RUNNER_VERSION)
         print('Account: mobile-test@example.com / test-password-123')
         print('A fresh temporary DB is used on every run; stopping removes test data.')
         module.app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)

@@ -117,6 +117,14 @@ EAS Update로 앱 JavaScript를 게시하면 Metro를 항상 실행할 필요를
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
+Codespaces의 Origin 변환을 로컬에서 모의한 브라우저 로그인/쿠키/자동저장/재읽기 검증:
+
+```bash
+node tests/browser_mobile_proxy.cjs
+```
+
+Playwright와 Chromium이 있는 개발 환경에서 실행합니다. 새 가짜 DB와 로컬 HTTP만 사용하며, 운영 서버나 실제 Codespaces로 요청하지 않습니다. 테스트는 일반 Origin과 HTTP/HTTPS localhost 변환을 각각 검증하고, 다른 실행기 ID를 반환하는 포트는 시작 확인에서 거절하는지도 확인합니다.
+
 mobile 폴더:
 
 ```bash
@@ -131,7 +139,7 @@ npm test
 npm run export:ios
 ```
 
-`export:ios`는 JS 번들 검증이며 서명된 iPhone 앱이나 TestFlight 배포가 아닙니다. 현재 Codex에서 테스트/번들/로컬 서버 응답을 검증했지만, 실제 Codespaces의 Public 포트와 iPhone Expo Go 연결·쿠키·키보드는 사용자 환경에서 아직 확인하지 않았습니다. 이 구성을 완전한 24시간 테스트 서비스라고 설명하지 않습니다.
+`export:ios`는 JS 번들 검증이며 서명된 iPhone 앱이나 TestFlight 배포가 아닙니다. iPhone Expo Go에서 SDK 57 앱 열기, 가짜 계정 로그인, 한글 입력과 자동저장은 실기기에서 확인했습니다. 아래 Codespaces 웹 로그인 수정의 실기기 확인과 앱·웹 동시 편집/충돌 검증은 진행 중입니다. 이 구성을 완전한 24시간 테스트 서비스라고 설명하지 않습니다.
 
 ## 이미 만든 Codespace에서 SDK 수정 반영
 
@@ -153,6 +161,10 @@ bash tools/start_mobile_codespace.sh
 
 ## 테스트 웹에서 ‘허용되지 않는 요청’이 나오는 경우
 
-Codespaces는 외부 HTTPS를 내부 HTTP로 전달합니다. 가짜 테스트 실행기는 이 Codespace에 설정된 8000번 HTTPS 주소를 고정해 Flask가 같은 주소를 보도록 합니다. 다른 Origin과 CSRF 토큰이 없는 요청은 기존 검사에서 계속 차단합니다. 요청의 X-Forwarded-* 헤더를 무조건 신뢰하거나 운영 Flask 검사를 해제하지 않습니다. 이 처리는 tools/mobile_test_proxy.py와 가짜 실행기에만 있으며 운영 웹/배포 설정에는 추가하지 않습니다.
+Codespaces는 외부 HTTPS를 내부 HTTP로 전달하며, 브라우저의 Origin 헤더를 `http://localhost:8000` 또는 `https://localhost:8000`으로 바꿀 수 있습니다. 외부 주소의 HTTPS만 보정하면 이 경우에도 로그인이 403으로 거절됩니다. [헤더 변환 재현 보고](https://github.com/orgs/community/discussions/147513), [관련 VS Code 신고](https://github.com/microsoft/vscode/issues/190177).
+
+가짜 실행기는 설정된 8000번 HTTPS 주소를 고정합니다. localhost Origin은 Referer가 정확히 이 공개 HTTPS 주소이고 브라우저의 `Sec-Fetch-Site`가 `same-origin`인 경우에만 복원합니다. 다른 Origin, 외부/누락 Referer, 다른 사이트에서 온 요청, CSRF 토큰이 없는 저장은 계속 차단합니다. 이 처리는 tools/mobile_test_proxy.py와 가짜 실행기에만 있으며 운영 Flask/배포 설정에는 추가하지 않습니다.
+
+시작 시 `Test API ready: codespaces-origin-v2 (new runner confirmed)`가 출력되어야 합니다. 새 실행기 고유 ID와 응답 버전을 확인한 뒤 Metro를 시작합니다. 8000 포트에 이전 실행기가 남아 있으면 명확히 중단하며 다른 프로세스를 강제로 종료하지 않습니다. 주소가 계속 거절되면 테스트 터미널에 `TEST_ORIGIN_REJECTED`와 받은 Origin/예상 Origin/Fetch Metadata만 출력됩니다. 비밀번호, 쿠키, 원고, Referer 경로는 기록하지 않습니다.
 
 이전 실행기가 동작 중이면 서버를 중지하고 git pull --ff-only 후 시작 명령을 다시 실행합니다. 테스트 DB가 새로 만들어지므로 웹과 앱 모두 가짜 계정으로 다시 로그인합니다. 앱이 이전 세션을 표시하면 Expo Go의 Reload 또는 앱을 다시 열어 로그인 상태를 새로 시작합니다.
