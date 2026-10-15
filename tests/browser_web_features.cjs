@@ -20,7 +20,13 @@ async function fixture(browser,state){
   const req=route.request(),url=new URL(req.url());
   const json=(value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});
   if(url.pathname==='/api/me')return json({email:'web-features@example.com',csrf:'synthetic-csrf'});
-  if(url.pathname==='/api/manuscripts')return json(state.ids.map(id=>state.docs.find(d=>d.id===id)));
+  if(url.pathname==='/api/manuscripts'){
+   if(req.method()==='POST'){
+    const doc={id:'new-'+state.docs.length,title:'제목 없는 원고',body:'',version:0,updated:99,total:0,today:0,day:'2026-10-15'};
+    state.docs.push(doc);state.ids.unshift(doc.id);return json(doc,201);
+   }
+   return json(state.ids.map(id=>state.docs.find(d=>d.id===id)));
+  }
   if(url.pathname==='/api/manuscript-order'){
    if(req.method()==='GET'){
     const snapshot={ids:[...state.ids],version:state.version};
@@ -118,6 +124,28 @@ async function dragBefore(page,from,to){
    assert.deepEqual(state.ids,['c','b','a']);
    console.log('PASS: late list response cannot undo a completed drag; keyboard move also saves');
    await context.close();
+  }
+  {
+   const state=seed(),{context,page,errors}=await fixture(browser,state);
+   const delayed=hold();state.holdOrder=delayed;
+   await page.evaluate(()=>{void window.poll();});await delayed.ready;
+   await page.locator('#body').fill('목록 조회 중 새로 저장한 가짜 글');
+   await page.waitForFunction(()=>document.querySelector('#saveStatus').textContent==='저장됨');
+   delayed.release();await page.waitForFunction(()=>!refreshing);
+   assert.equal(await page.evaluate(()=>docs.find(d=>d.id==='a').body),state.docs.find(d=>d.id==='a').body);
+   assert.equal(await page.inputValue('#body'),state.docs.find(d=>d.id==='a').body);
+   assert.deepEqual(errors,[]);await context.close();
+   console.log('PASS: list response started before an edit cannot replace the newly saved sidebar data');
+  }
+  {
+   const state=seed(),{context,page,errors}=await fixture(browser,state);
+   const delayed=hold();state.holdOrder=delayed;
+   await page.evaluate(()=>{void window.poll();});await delayed.ready;
+   await page.locator('#newDoc').click();await page.waitForFunction(()=>current.id.startsWith('new-'));
+   delayed.release();await page.waitForFunction(()=>!refreshing);
+   assert.equal((await ids(page))[0],'new-3');
+   assert.equal(await page.inputValue('#body'),'');assert.deepEqual(errors,[]);await context.close();
+   console.log('PASS: a late list response cannot remove a newly created manuscript');
   }
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

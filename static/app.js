@@ -63,8 +63,8 @@ function acceptListState(state){
  if(orderVersion===null)orderStatus('원고 순서를 불러오지 못했습니다. 목록을 다시 열어 주세요.');
 }
 async function refreshDocuments(){
- const epoch=orderEpoch,state=await fetchListState();
- if(epoch!==orderEpoch||orderBusy||draggedId)return;
+ const epoch=orderEpoch,editing=editEpoch,state=await fetchListState();
+ if(epoch!==orderEpoch||editing!==editEpoch||dirty||saving||composing||recoveryReview||orderBusy||draggedId)return;
  acceptListState(state);
 }
 function clearDropTarget(){for(const node of $('documents').children)node.classList.remove('dropBefore','dropAfter');}
@@ -148,7 +148,7 @@ function downloadedAt(date){
  return parts.year+'-'+parts.month+'-'+parts.day+' '+parts.hour+':'+parts.minute+':'+parts.second+' (한국시간)';
 }
 function download(){if(!current)return;const stamp='내려받은 시각: '+downloadedAt(new Date());const blob=new Blob([stamp+'\n\n'+$('title').value+'\n\n'+$('body').value],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=($('title').value||'원고').replace(/[\\/:*?"<>|]/g,'_')+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-async function newDoc(){if(saving)return;if(dirty&&!await save())return;try{const d=await api('/manuscripts','POST',{});docs.unshift(d);if(dirty||saving){list();return;}render(d,true);$('title').focus();}catch(e){notice(e.message);}}
+async function newDoc(){if(saving)return;if(dirty&&!await save())return;try{const d=await api('/manuscripts','POST',{});orderEpoch++;docs.unshift(d);if(dirty||saving){list();return;}render(d,true);$('title').focus();}catch(e){notice(e.message);}}
 async function enter(user){draftEmail=user.email;refreshDraftCount();csrf=user.csrf;$('adminLink').hidden=!user.is_admin;$('accountEmail').textContent=user.email;await refreshDocuments();$('auth').hidden=true;$('workspace').hidden=false;$('download').disabled=true;$('workspace').classList.add('view-list');$('closeList').hidden=true;list();if(docs.length&&!mobileLayout.matches)render(docs[0]);}
 $('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
 $('toggleAuth').onclick=()=>{register=!register;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';};
