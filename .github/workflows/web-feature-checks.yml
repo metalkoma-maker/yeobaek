@@ -1,0 +1,40 @@
+name: 웹 변경 검증
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'admin_panel.py'
+      - 'static/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/web-feature-checks.yml'
+permissions:
+  contents: read
+concurrency:
+  group: web-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: 가짜 데이터 단위 검증
+        run: |
+          python3 -m venv "$RUNNER_TEMP/test-venv"
+          "$RUNNER_TEMP/test-venv/bin/pip" install -r requirements.txt
+          "$RUNNER_TEMP/test-venv/bin/python" -m unittest discover -s tests -v
+      - name: 브라우저 도구 준비
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.56.1
+          test -x /usr/bin/google-chrome
+      - name: 원고 편집·내려받기·목록 순서 검증
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
+          node tests/browser_web_input.cjs
+          node tests/browser_web_writing.cjs
+          node tests/browser_web_features.cjs
