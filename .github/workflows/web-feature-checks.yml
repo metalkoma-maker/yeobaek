@@ -7,6 +7,8 @@ on:
       - 'static/**'
       - 'tests/**'
       - 'requirements.txt'
+      - 'tools/run_web_preview.py'
+      - 'tools/start_web_preview.sh'
       - '.github/workflows/web-feature-checks.yml'
 permissions:
   contents: read
@@ -38,3 +40,25 @@ jobs:
           node tests/browser_web_input.cjs
           node tests/browser_web_writing.cjs
           node tests/browser_web_features.cjs
+      - name: 실제 가짜 서버 미리보기 검증
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          set -euo pipefail
+          export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
+          CODESPACES=false "$RUNNER_TEMP/test-venv/bin/python" -u tools/run_web_preview.py --port 8001 > "$RUNNER_TEMP/web-preview.log" 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true; wait "$preview_pid" 2>/dev/null || true' EXIT
+          "$RUNNER_TEMP/test-venv/bin/python" - <<'PY'
+          import json,time,urllib.request,urllib.error
+          for attempt in range(40):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:8001/__web_preview__', timeout=1) as response:
+                      assert json.load(response)['syntheticOnly'] is True
+                  break
+              except (urllib.error.URLError,TimeoutError):
+                  time.sleep(0.25)
+          else:
+              raise SystemExit('Preview did not start')
+          PY
+          node tests/browser_web_preview.cjs

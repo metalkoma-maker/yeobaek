@@ -1,0 +1,42 @@
+/* Start tools/run_web_preview.py locally, then run this against port 8001.
+   Exercises the actual Flask preview and a new synthetic DB, not a mock API. */
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+(async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+  try {
+    const context = await browser.newContext({ acceptDownloads: true });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('http://127.0.0.1:8001/');
+    assert.match(await page.locator('#previewNotice').textContent(), /가짜 원고 전용/);
+    assert.equal(await page.inputValue('#email'), 'mobile-test@example.com');
+    await page.locator('#submitAuth').click();
+    await page.locator('#workspace').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#documents button').count(), 3);
+    const before = await page.locator('#documents button').evaluateAll(nodes => nodes.map(node => node.dataset.id));
+    const saved = page.waitForResponse(response => response.url().endsWith('/api/manuscript-order') && response.request().method() === 'PUT');
+    await page.locator('[data-id="' + before[2] + '"]').dragTo(page.locator('[data-id="' + before[0] + '"]'), { targetPosition: { x: 20, y: 5 } });
+    assert.equal((await saved).status(), 200);
+    await page.waitForFunction(() => !orderBusy);
+    const expected = [before[2], before[0], before[1]];
+    assert.deepEqual(await page.locator('#documents button').evaluateAll(nodes => nodes.map(node => node.dataset.id)), expected);
+    const other = await browser.newContext();
+    const otherPage = await other.newPage();
+    await otherPage.goto('http://127.0.0.1:8001/');
+    await otherPage.locator('#submitAuth').click();
+    await otherPage.locator('#workspace').waitFor({ state: 'visible' });
+    assert.deepEqual(await otherPage.locator('#documents button').evaluateAll(nodes => nodes.map(node => node.dataset.id)), expected);
+    await page.clock.setFixedTime(new Date('2026-10-15T03:04:05Z'));
+    const pendingDownload = page.waitForEvent('download');
+    await page.locator('#download').click();
+    const download = await pendingDownload;
+    assert.match(await fs.readFile(await download.path(), 'utf8'), /^내려받은 시각: 2026-10-15 12:04:05 \(한국시간\)/);
+    assert.deepEqual(errors, []);
+    if (process.env.PREVIEW_SCREENSHOT) await page.screenshot({ path: process.env.PREVIEW_SCREENSHOT });
+    await other.close(); await context.close();
+    console.log('PASS: real preview has 3 fake documents; login, drag, another browser and TXT timestamp work');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });
