@@ -180,7 +180,7 @@ def install(database=None, public_key_file=None):
     authorized.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chown(authorized.parent, info.pw_uid, info.pw_gid)
     os.chmod(authorized.parent, 0o700)
-    line = f'restrict,command="{GATEWAY}" {key}\n'
+    line = f'from="100.64.0.0/10",restrict,command="{GATEWAY}" {key}\n'
     write_owned(authorized, line.encode(), 0o600, info.pw_uid, info.pw_gid)
     command(shutil.which('passwd'), '-l', ACCOUNT)
     read_check = ('import sqlite3,sys; c=sqlite3.connect(Path(sys.argv[1]).as_uri()+"?mode=ro",uri=True); '
