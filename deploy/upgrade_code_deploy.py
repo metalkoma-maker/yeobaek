@@ -110,13 +110,29 @@ def database_of_running_service(service):
     return Path(os.path.abspath(Path(os.readlink(proc / 'cwd')) / raw))
 
 
+def verify_ssh_key_path(account):
+    result = subprocess.run([shutil.which('sshd'), '-T', '-C',
+                             f'user={ACCOUNT},host=localhost,addr=100.64.0.1'],
+                            check=True, timeout=10, capture_output=True, text=True)
+    settings = dict(line.split(' ', 1) for line in result.stdout.splitlines() if ' ' in line)
+    if settings.get('authorizedkeyscommand') != 'none' or settings.get('trustedusercakeys') != 'none':
+        raise ValueError('Additional SSH key or certificate authentication must be reviewed separately')
+    allowed = ['.ssh/authorized_keys', '.ssh/authorized_keys2']
+    paths = settings.get('authorizedkeysfile', '').split()
+    if not paths or any(path not in allowed for path in paths):
+        raise ValueError('Deploy account uses an unexpected SSH authorized keys location')
+    if '.ssh/authorized_keys2' in paths and (Path(account.pw_dir) / '.ssh/authorized_keys2').exists():
+        raise ValueError('A second deployment key file must be removed by the administrator')
+
+
 def install(database=None, public_key_file=None):
     if os.geteuid() != 0:
         raise ValueError('One-time setup requires administrator privileges')
-    for executable in ('setfacl', 'visudo', 'runuser', 'sudo', 'systemctl', 'passwd'):
+    for executable in ('setfacl', 'visudo', 'runuser', 'sudo', 'systemctl', 'passwd', 'sshd'):
         if not shutil.which(executable):
             raise ValueError('Required server tool is missing: ' + executable)
     info = pwd.getpwnam(ACCOUNT)
+    verify_ssh_key_path(info)
     if CONFIG.is_symlink() or CONFIG.stat().st_uid != 0 or CONFIG.stat().st_mode & 0o022:
         raise ValueError('Existing deployment configuration must be protected and root-owned')
     config = json.loads(CONFIG.read_text())

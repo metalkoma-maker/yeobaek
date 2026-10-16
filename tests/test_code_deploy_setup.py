@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'deploy'))
@@ -16,6 +17,20 @@ spec.loader.exec_module(setup)
 
 
 class CodeDeploySetupTest(unittest.TestCase):
+    def test_extra_ssh_authentication_path_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            account = SimpleNamespace(pw_dir=temporary)
+            settings = ('authorizedkeyscommand none\ntrustedusercakeys none\n'
+                        'authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2\n')
+            with patch.object(setup.shutil, 'which', return_value='/usr/sbin/sshd'), \
+                 patch.object(setup.subprocess, 'run', return_value=SimpleNamespace(stdout=settings)):
+                setup.verify_ssh_key_path(account)
+            settings = settings.replace('authorizedkeyscommand none', 'authorizedkeyscommand /unexpected/helper')
+            with patch.object(setup.shutil, 'which', return_value='/usr/sbin/sshd'), \
+                 patch.object(setup.subprocess, 'run', return_value=SimpleNamespace(stdout=settings)):
+                with self.assertRaisesRegex(ValueError, 'Additional SSH'):
+                    setup.verify_ssh_key_path(account)
+
     def test_public_key_must_be_unique(self):
         line = 'restrict,command="/old/gateway" ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABAQ== previous'
         self.assertEqual(setup.one_public_key(line), 'ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABAQ==')
