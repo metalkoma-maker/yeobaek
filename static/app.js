@@ -48,7 +48,7 @@ for(const [id,redo] of [['undoEdit',false],['redoEdit',true]]){
 }
 window.addEventListener('resize',scheduleBodySize);
 $('body').addEventListener('yeobaek-font-change',scheduleBodySize);
-let orderVersion=null,orderEpoch=0,orderBusy=false,draggedId=null,ignoreDocClickUntil=0;
+let orderVersion=null,orderEpoch=0,orderBusy=false,draggedId=null,ignoreDocClickUntil=0,dragPointerY=null,dragScrollFrame=0;
 function orderStatus(message){const node=$('listOrderStatus');if(node)node.textContent=message;}
 function arrangeDocs(items,ids){
  const rank=new Map(ids.map((id,i)=>[id,i]));
@@ -68,6 +68,43 @@ async function refreshDocuments(){
  acceptListState(state);
 }
 function clearDropTarget(){for(const node of $('documents').children)node.classList.remove('dropBefore','dropAfter');}
+function dropSlotAt(y){
+ const rows=[...$('documents').children];
+ for(let i=0;i<rows.length;i++)if(y<rows[i].getBoundingClientRect().top+rows[i].offsetHeight/2)return i;
+ return rows.length;
+}
+function showDropSlot(slot){
+ clearDropTarget();const rows=[...$('documents').children],from=docs.findIndex(d=>d.id===draggedId);
+ if(!rows.length||from<0||slot-(slot>from?1:0)===from)return;
+ (rows[slot]||rows[rows.length-1]).classList.add(slot===rows.length?'dropAfter':'dropBefore');
+}
+function stopDragScroll(){if(dragScrollFrame)cancelAnimationFrame(dragScrollFrame);dragScrollFrame=0;dragPointerY=null;}
+function scrollDraggedList(){
+ dragScrollFrame=0;if(!draggedId||dragPointerY===null)return;
+ const nav=$('documents'),bounds=nav.getBoundingClientRect(),edge=48;
+ const amount=dragPointerY<bounds.top+edge?-Math.min(22,Math.max(5,(bounds.top+edge-dragPointerY)/2)):
+  dragPointerY>bounds.bottom-edge?Math.min(22,Math.max(5,(dragPointerY-(bounds.bottom-edge))/2)):0;
+ if(amount){const before=nav.scrollTop;nav.scrollTop+=amount;if(nav.scrollTop!==before)showDropSlot(dropSlotAt(dragPointerY));}
+ dragScrollFrame=requestAnimationFrame(scrollDraggedList);
+}
+function dropDocumentAt(source,slot){
+ const ids=docs.map(d=>d.id),from=ids.indexOf(source);if(from<0)return;
+ ids.splice(from,1);ids.splice(slot-(slot>from?1:0),0,source);return storeOrder(ids);
+}
+$('sidebar').addEventListener('dragover',e=>{
+ if(!draggedId||orderBusy)return;
+ e.preventDefault();e.dataTransfer.dropEffect='move';dragPointerY=e.clientY;
+ showDropSlot(dropSlotAt(e.clientY));
+ if(!dragScrollFrame)dragScrollFrame=requestAnimationFrame(scrollDraggedList);
+});
+$('sidebar').addEventListener('drop',e=>{
+ if(!draggedId||orderBusy)return;
+ e.preventDefault();const source=draggedId,slot=dropSlotAt(e.clientY);
+ draggedId=null;ignoreDocClickUntil=performance.now()+250;stopDragScroll();clearDropTarget();void dropDocumentAt(source,slot);
+});
+$('sidebar').addEventListener('dragleave',e=>{
+ if(!e.currentTarget.contains(e.relatedTarget)){stopDragScroll();clearDropTarget();}
+});
 async function storeOrder(ids){
  if(orderBusy||orderVersion===null||ids.every((id,i)=>docs[i]?.id===id))return;
  const previous=docs.map(d=>d.id),version=orderVersion;
@@ -102,17 +139,7 @@ function list(){
    if(orderBusy||orderVersion===null||composing){e.preventDefault();return;}
    draggedId=d.id;b.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',d.id);
   });
-  b.addEventListener('dragover',e=>{
-   if(!draggedId||draggedId===d.id||orderBusy)return;
-   e.preventDefault();e.dataTransfer.dropEffect='move';clearDropTarget();
-   b.classList.add(e.clientY<b.getBoundingClientRect().top+b.offsetHeight/2?'dropBefore':'dropAfter');
-  });
-  b.addEventListener('drop',e=>{
-   if(!draggedId||orderBusy)return;e.preventDefault();
-   const source=draggedId,after=e.clientY>=b.getBoundingClientRect().top+b.offsetHeight/2;
-   draggedId=null;ignoreDocClickUntil=performance.now()+250;clearDropTarget();void moveDocument(source,d.id,after);
-  });
-  b.addEventListener('dragend',()=>{draggedId=null;ignoreDocClickUntil=performance.now()+250;clearDropTarget();list();});
+  b.addEventListener('dragend',()=>{draggedId=null;ignoreDocClickUntil=performance.now()+250;stopDragScroll();clearDropTarget();list();});
   b.addEventListener('keydown',async e=>{
    if(!e.altKey||!['ArrowUp','ArrowDown'].includes(e.key)||orderBusy||orderVersion===null)return;
    const index=docs.findIndex(x=>x.id===d.id),target=docs[index+(e.key==='ArrowUp'?-1:1)];if(!target)return;

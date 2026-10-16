@@ -99,6 +99,46 @@ async function dragBefore(page,from,to){
   }
   {
    const state=seed(),{context,page,errors}=await fixture(browser,state);
+   let saved=page.waitForResponse(r=>r.url().endsWith('/api/manuscript-order')&&r.request().method()==='PUT');
+   await page.locator('[data-id="a"]').dragTo(page.locator('#sidebar .account'),{targetPosition:{x:30,y:18}});
+   assert.equal((await saved).status(),200);
+   await page.waitForFunction(()=>!orderBusy);
+   assert.deepEqual(state.ids,['b','c','a']);
+   saved=page.waitForResponse(r=>r.url().endsWith('/api/manuscript-order')&&r.request().method()==='PUT');
+   await page.locator('[data-id="a"]').dragTo(page.locator('#sidebar .sideTop'),{targetPosition:{x:150,y:10}});
+   assert.equal((await saved).status(),200);
+   await page.waitForFunction(()=>!orderBusy);
+   assert.deepEqual(state.ids,['a','b','c']);
+   assert.equal(await page.inputValue('#body'),'가짜 본문 a');
+   assert.equal(state.bodyPuts.length,0);assert.deepEqual(errors,[]);
+   console.log('PASS: dropping far below or above the manuscript cards saves the correct order');
+   await context.close();
+  }
+  {
+   const state=seed();
+   state.docs=Array.from({length:30},(_,i)=>({id:'row-'+i,title:'가짜 원고 '+i,body:'가짜 본문 '+i,version:0,updated:i+1,total:5,today:5,day:'2026-10-15'}));
+   state.ids=state.docs.map(d=>d.id);
+   const {context,page,errors}=await fixture(browser,state);
+   const source=await page.locator('[data-id="row-0"]').boundingBox();
+   const nav=await page.locator('#documents').boundingBox();
+   await page.mouse.move(source.x+30,source.y+25);
+   await page.mouse.down();
+   await page.mouse.move(source.x+30,source.y+60,{steps:5});
+   await page.mouse.move(nav.x+60,nav.y+nav.height-8,{steps:10});
+   await page.waitForFunction(()=>draggedId==='row-0'&&document.querySelector('#documents').scrollTop>80);
+   await page.mouse.move(nav.x+61,nav.y+nav.height-9,{steps:2});
+   const saved=page.waitForResponse(r=>r.url().endsWith('/api/manuscript-order')&&r.request().method()==='PUT');
+   await page.mouse.up();
+   assert.equal((await saved).status(),200);
+   await page.waitForFunction(()=>!orderBusy);
+   await page.waitForFunction(()=>!orderBusy);
+   assert.ok(state.ids.indexOf('row-0')>1);
+   assert.deepEqual(errors,[]);
+   console.log('PASS: holding a dragged manuscript near the list edge scrolls toward distant positions');
+   await context.close();
+  }
+  {
+   const state=seed(),{context,page,errors}=await fixture(browser,state);
    state.fail=true;assert.equal(await dragBefore(page,'c','a'),503);
    assert.deepEqual(await ids(page),['a','b','c']);assert.equal(await page.inputValue('#body'),'가짜 본문 a');
    assert.match(await page.locator('#listOrderStatus').textContent(),/저장하지 못했습니다/);
