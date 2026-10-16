@@ -5,12 +5,14 @@ on:
       - 'app.py'
       - 'admin_panel.py'
       - 'static/**'
+      - 'deploy/**'
       - 'tests/**'
       - 'requirements.txt'
       - 'tools/run_web_preview.py'
       - 'tools/start_web_preview.sh'
       - 'tools/start_web_preview_tunnel.py'
       - '.github/workflows/web-feature-checks.yml'
+      - '.github/workflows/manual-web-deploy.yml'
 permissions:
   contents: read
 concurrency:

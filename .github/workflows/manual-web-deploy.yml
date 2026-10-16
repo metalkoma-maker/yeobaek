@@ -3,15 +3,11 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'inspect=조회만 / deploy=웹 배포 / rollback=직전 배포 복원'
+        description: 'inspect=조회만 / deploy=서버·웹 배포 / rollback=코드 복원 (DB 데이터 유지)'
         type: choice
         options: [inspect, deploy, rollback]
         default: inspect
         required: true
-      expected_fingerprint:
-        description: 'deploy/rollback에 필요: 직전 inspect 결과의 fingerprint (64자리)'
-        type: string
-        required: false
 permissions:
   contents: read
 concurrency:
@@ -35,13 +31,14 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.56.1
           test -x /usr/bin/google-chrome
-      - name: PC·모바일 웹 및 연속 삭제 검증 (가짜 API)
+      - name: PC·모바일 웹, 내려받기, 원고 정렬 검증 (가짜 API)
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome
         run: |
           export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
           node tests/browser_web_input.cjs
           node tests/browser_web_writing.cjs
+          node tests/browser_web_features.cjs
   production:
     needs: verify
     runs-on: ubuntu-24.04
@@ -54,7 +51,6 @@ jobs:
       - name: 입력과 SSH 설정 검증
         env:
           DEPLOY_ACTION: ${{ inputs.action }}
-          EXPECTED: ${{ inputs.expected_fingerprint }}
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
@@ -65,10 +61,6 @@ jobs:
           set -euo pipefail
           umask 077
           case "$DEPLOY_ACTION" in inspect|deploy|rollback) ;; *) exit 1 ;; esac
-          if [[ "$DEPLOY_ACTION" != inspect && ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
-            echo 'inspect 결과의 fingerprint를 먼저 입력하세요.' >&2
-            exit 1
-          fi
           test -n "$SSH_KEY"
           test -n "$KNOWN_HOSTS"
           test -n "$TS_CLIENT_ID"
@@ -103,19 +95,31 @@ jobs:
       - name: 수동 작업 실행 (서버에서 백업·건강 확인·실패 복원)
         env:
           DEPLOY_ACTION: ${{ inputs.action }}
-          EXPECTED: ${{ inputs.expected_fingerprint }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
         shell: bash
         run: |
           set -euo pipefail
           remote=(ssh -T -p 22 -i "$RUNNER_TEMP/yeobaek-key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/yeobaek-known-hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 "yeobaek-deploy@$DEPLOY_HOST")
+          inspection=$("${remote[@]}" inspect)
+          printf '%s\n' "$inspection"
+          expected=$(INSPECTION="$inspection" python3 - <<'PY'
+          import json, os, re
+          report = json.loads(os.environ['INSPECTION'])
+          if report.get('capability') != 'code-and-additive-manuscript-order-v1':
+              raise SystemExit('서버에 제한된 코드 배포 도구를 먼저 한 번 설치해야 합니다.')
+          fingerprint = report.get('fingerprint', '')
+          if not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+              raise SystemExit('서버 코드 fingerprint가 올바르지 않습니다.')
+          print(fingerprint)
+          PY
+          )
           case "$DEPLOY_ACTION" in
-            inspect) "${remote[@]}" inspect ;;
+            inspect) ;;
             deploy)
               python3 deploy/build_release.py --commit "$GITHUB_SHA" --output "$RUNNER_TEMP/release.zip"
-              "${remote[@]}" "deploy $EXPECTED" < "$RUNNER_TEMP/release.zip"
+              "${remote[@]}" "deploy $expected" < "$RUNNER_TEMP/release.zip"
               ;;
-            rollback) "${remote[@]}" "rollback $EXPECTED" ;;
+            rollback) "${remote[@]}" "rollback $expected" ;;
           esac
       - name: 개인키 임시 파일 제거
         if: always()
