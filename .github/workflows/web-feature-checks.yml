@@ -9,6 +9,7 @@ on:
       - 'requirements.txt'
       - 'tools/run_web_preview.py'
       - 'tools/start_web_preview.sh'
+      - 'tools/start_web_preview_tunnel.py'
       - '.github/workflows/web-feature-checks.yml'
 permissions:
   contents: read
@@ -62,3 +63,25 @@ jobs:
               raise SystemExit('Preview did not start')
           PY
           node tests/browser_web_preview.cjs
+      - name: 임시 HTTPS 주소의 로그인·드래그·내려받기 검증
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          set -euo pipefail
+          export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
+          "$RUNNER_TEMP/test-venv/bin/python" -u tools/run_web_preview.py --port 18002 --public-origin https://synthetic-browser.trycloudflare.com > "$RUNNER_TEMP/web-preview-tunnel.log" 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true; wait "$preview_pid" 2>/dev/null || true' EXIT
+          "$RUNNER_TEMP/test-venv/bin/python" - <<'PY'
+          import time,urllib.request,urllib.error
+          for attempt in range(40):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:18002/__web_preview__', timeout=1) as response:
+                      assert response.status == 200
+                  break
+              except (urllib.error.URLError,TimeoutError):
+                  time.sleep(0.25)
+          else:
+              raise SystemExit('Preview did not start')
+          PY
+          PREVIEW_BASE_URL=http://127.0.0.1:18002 PREVIEW_TUNNEL_TEST=1 node tests/browser_web_preview.cjs

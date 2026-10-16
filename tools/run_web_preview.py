@@ -3,12 +3,20 @@ import argparse
 import os
 from pathlib import Path
 import re
+import socket
 import sys
 import tempfile
 from urllib.parse import urlsplit
 
 EMAIL = 'mobile-test@example.com'
 PASSWORD = 'test-password-123'
+
+
+def quick_tunnel_origin(value):
+    """Accept only an exact HTTPS origin for a single Cloudflare Quick Tunnel."""
+    if not re.fullmatch(r'https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.trycloudflare\.com', value):
+        raise argparse.ArgumentTypeError('Use an exact https://NAME.trycloudflare.com origin')
+    return value
 
 
 class PreviewOrigin:
@@ -36,14 +44,25 @@ class PreviewOrigin:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8001)
+    parser.add_argument('--public-origin', type=quick_tunnel_origin,
+                        help='HTTPS origin of a temporary Cloudflare Quick Tunnel')
+    parser.add_argument('--listen-fd', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--run-id', default='', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error('Use an unprivileged preview port')
+    if args.listen_fd is not None:
+        if not args.public_origin:
+            parser.error('An inherited socket requires an explicit preview origin')
+        with socket.fromfd(args.listen_fd, socket.AF_INET, socket.SOCK_STREAM) as listener:
+            if (listener.getsockname() != ('127.0.0.1', args.port)
+                    or not listener.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN)):
+                parser.error('The preview socket must already listen on loopback')
     codespaces = os.environ.get('CODESPACES') == 'true'
     name = os.environ.get('CODESPACE_NAME', '')
-    if codespaces and not re.fullmatch('[a-z0-9-]+', name):
+    if codespaces and not args.public_origin and not re.fullmatch('[a-z0-9-]+', name):
         parser.error('A valid Codespace name is required')
-    origin = f'https://{name}-{args.port}.app.github.dev' if codespaces else None
+    origin = args.public_origin or (f'https://{name}-{args.port}.app.github.dev' if codespaces else None)
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root))
     # Override any inherited DB setting before importing code that initializes it.
@@ -58,7 +77,7 @@ def main():
         @module.app.get('/__web_preview__')
         def marker():
             return {'syntheticOnly': True, 'preview': 'web-download-order-v1',
-                    'publicOrigin': origin}
+                    'publicOrigin': origin, 'runId': args.run_id}
 
         @module.app.get('/_preview/banner.css')
         def preview_style():
@@ -109,8 +128,18 @@ def main():
         print('WEB PREVIEW: ' + (origin or f'http://127.0.0.1:{args.port}'), flush=True)
         print('Synthetic account: ' + EMAIL + ' / ' + PASSWORD, flush=True)
         print('Temporary fake DB only. Stopping the server removes preview data.', flush=True)
-        module.app.run(host='0.0.0.0' if codespaces else '127.0.0.1',
-                       port=args.port, debug=False, use_reloader=False)
+        if args.listen_fd is not None:
+            from werkzeug.serving import make_server
+            server = make_server('127.0.0.1', args.port, module.app,
+                                 threaded=True, fd=args.listen_fd)
+            os.close(args.listen_fd)
+            try:
+                server.serve_forever()
+            finally:
+                server.server_close()
+        else:
+            module.app.run(host='0.0.0.0' if codespaces and not args.public_origin else '127.0.0.1',
+                           port=args.port, debug=False, use_reloader=False)
 
 
 if __name__ == '__main__':

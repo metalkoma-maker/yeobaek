@@ -3,14 +3,27 @@
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const localUrl = process.env.PREVIEW_BASE_URL || 'http://127.0.0.1:8001';
+const publicOrigin = process.env.PREVIEW_TUNNEL_TEST === '1' ? 'https://synthetic-browser.trycloudflare.com' : null;
+const baseUrl = publicOrigin || localUrl;
+async function forwardPreview(context) {
+  if (!publicOrigin) return;
+  // Model HTTPS termination without creating a public tunnel in tests.
+  await context.route(publicOrigin + '/**', async route => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch({ url: localUrl + url.pathname + url.search });
+    await route.fulfill({ response });
+  });
+}
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
   try {
     const context = await browser.newContext({ acceptDownloads: true });
+    await forwardPreview(context);
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto('http://127.0.0.1:8001/');
+    await page.goto(baseUrl + '/');
     assert.match(await page.locator('#previewNotice').textContent(), /가짜 원고 전용/);
     assert.equal(await page.inputValue('#email'), 'mobile-test@example.com');
     await page.locator('#submitAuth').click();
@@ -24,8 +37,9 @@ const fs = require('node:fs/promises');
     const expected = [before[2], before[0], before[1]];
     assert.deepEqual(await page.locator('#documents button').evaluateAll(nodes => nodes.map(node => node.dataset.id)), expected);
     const other = await browser.newContext();
+    await forwardPreview(other);
     const otherPage = await other.newPage();
-    await otherPage.goto('http://127.0.0.1:8001/');
+    await otherPage.goto(baseUrl + '/');
     await otherPage.locator('#submitAuth').click();
     await otherPage.locator('#workspace').waitFor({ state: 'visible' });
     assert.deepEqual(await otherPage.locator('#documents button').evaluateAll(nodes => nodes.map(node => node.dataset.id)), expected);
