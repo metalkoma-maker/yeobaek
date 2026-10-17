@@ -41,7 +41,7 @@ jobs:
           echo "$!" > "$RUNNER_TEMP/mobile-preview.pid"
           for attempt in $(seq 1 180); do
             if grep -q '^MOBILE_PREVIEW_URL=' "$RUNNER_TEMP/mobile-preview.log"; then
-              sed -n 's/^MOBILE_PREVIEW_URL=//p' "$RUNNER_TEMP/mobile-preview.log" | head -1 > "$RUNNER_TEMP/mobile-preview-url.txt"
+              grep -E '^(MOBILE_PREVIEW_URL|MOBILE_EXPO_URL|EXPO_AUTH_CONFIGURED)=' "$RUNNER_TEMP/mobile-preview.log" > "$RUNNER_TEMP/mobile-preview-url.txt"
               cat "$RUNNER_TEMP/mobile-preview-url.txt"
               exit 0
             fi

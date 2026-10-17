@@ -80,6 +80,21 @@ def metro_status(url):
         assert response.read(100).strip() == b'packager-status:running'
 
 
+def expo_go_link(url):
+    with urllib.request.urlopen(url + '/_expo/open?platform=ios&runtime=expo', timeout=8) as response:
+        info = json.load(response)
+    link = info.get('platforms', {}).get('ios', {}).get('url')
+    if not isinstance(link, str) or not link.startswith('exp://'):
+        raise RuntimeError('Expo CLI did not provide an iOS Expo Go link')
+    return link
+
+
+def check_expo_go_link(url, expected):
+    actual = expo_go_link(url)
+    if actual != expected:
+        raise RuntimeError('Expo CLI link differs from preview page')
+
+
 def open_page(api_url, expo_url):
     with urllib.request.urlopen(api_url + '/_mobile/open', timeout=8) as response:
         page = response.read(20_000).decode('utf-8')
@@ -128,7 +143,10 @@ def main():
             wait_for(lambda: marker(api_url, run_id, api_url), processes, 'public synthetic API')
             wait_for(lambda: public_login(api_url), processes, 'public test login')
             wait_for(lambda: metro_status(metro_url), processes, 'public Expo Metro')
+            wait_for(lambda: check_expo_go_link(metro_url, expo_url), processes, 'Expo CLI iOS link')
             wait_for(lambda: open_page(api_url, expo_url), processes, 'public Expo Go link')
+            print('MOBILE_EXPO_URL=' + expo_url, flush=True)
+            print('EXPO_AUTH_CONFIGURED=' + ('true' if environment.get('EXPO_TOKEN') else 'false'), flush=True)
             print('MOBILE_PREVIEW_URL=' + api_url + '/_mobile/open', flush=True)
             print('Synthetic data only; expires within 55 minutes.', flush=True)
             deadline = time.monotonic() + 55 * 60

@@ -84,7 +84,7 @@ Codespaces 아래 **PORTS** 탭에서 `8000`, `8081` 두 행의 **Port Visibilit
 ### 5. 같은 아이폰에서 앱 열기
 
 1. 터미널에 출력된 `https://...-8000.app.github.dev/_mobile/open` 링크를 iPhone Safari에서 엽니다.
-2. **Expo Go에서 소설여백 열기**를 누릅니다. 같은 폰으로 QR을 찍을 필요 없이 Expo CLI가 생성하는 `exp://` 링크로 앱을 엽니다. Expo 터미널의 QR 대신 이 버튼을 사용합니다.
+2. PC의 코덱스 채팅에 제공된 QR을 아이폰 기본 카메라로 스캔해 Expo Go에서 엽니다. 같은 아이폰에서 링크를 열었다면 **Expo Go에서 소설여백 열기** 버튼도 사용할 수 있지만, Safari가 `exp://` 주소를 거절할 수 있습니다.
 3. 앱은 테스트 API 주소를 자동 입력합니다. 다음 가짜 계정으로 로그인합니다.
 
 ```text
