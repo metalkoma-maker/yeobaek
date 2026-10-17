@@ -8,7 +8,7 @@ if [[ "${CODESPACES:-}" != true || ! "${CODESPACE_NAME:-}" =~ ^[a-z0-9-]+$ ]]; t
 fi
 export EXPO_PUBLIC_TEST_API_URL="https://${CODESPACE_NAME}-8000.app.github.dev"
 export EXPO_PACKAGER_PROXY_URL="https://${CODESPACE_NAME}-8081.app.github.dev"
-export YEOBAEK_EXPO_LINK="exps://${CODESPACE_NAME}-8081.app.github.dev"
+export YEOBAEK_EXPO_LINK="exp://${CODESPACE_NAME}-8081.app.github.dev"
 export YEOBAEK_TEST_RUN_ID="$(.venv/bin/python -c 'import secrets; print(secrets.token_hex(16))')"
 echo 'In PORTS set 8000 and 8081 to Public (only fake data; Metro source is accessible).'
 echo 'Keep port protocol HTTP: GitHub provides the external HTTPS URL.'

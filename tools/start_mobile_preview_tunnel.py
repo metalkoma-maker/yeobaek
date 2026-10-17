@@ -11,6 +11,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 from start_web_preview_tunnel import ORIGIN_PATTERN, download_connector, stop_process
 
@@ -79,6 +80,12 @@ def metro_status(url):
         assert response.read(100).strip() == b'packager-status:running'
 
 
+def open_page(api_url, expo_url):
+    with urllib.request.urlopen(api_url + '/_mobile/open', timeout=8) as response:
+        page = response.read(20_000).decode('utf-8')
+    assert 'href="' + expo_url + '"' in page
+
+
 def main():
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise RuntimeError('The temporary preview is launched by GitHub Actions only')
@@ -100,9 +107,10 @@ def main():
             metro_tunnel, metro_url, metro_log = tunnel_url(binary, config, directory, 'metro', 8081, environment)
             processes.append(metro_tunnel); logs.append(metro_log)
             run_id = secrets.token_hex(16)
+            expo_url = 'exp://' + urlsplit(metro_url).hostname
             environment.update(YEOBAEK_MOBILE_PREVIEW='true', EXPO_PUBLIC_YEOBAEK_MODE='synthetic',
                                EXPO_PUBLIC_TEST_API_URL=api_url, EXPO_PACKAGER_PROXY_URL=metro_url,
-                               YEOBAEK_EXPO_LINK='exps://' + metro_url.removeprefix('https://'),
+                               YEOBAEK_EXPO_LINK=expo_url,
                                YEOBAEK_TEST_RUN_ID=run_id, CI='1', EXPO_OFFLINE='1')
             api_log = (directory / 'server.log').open('w+')
             logs.append(api_log)
@@ -120,6 +128,7 @@ def main():
             wait_for(lambda: marker(api_url, run_id, api_url), processes, 'public synthetic API')
             wait_for(lambda: public_login(api_url), processes, 'public test login')
             wait_for(lambda: metro_status(metro_url), processes, 'public Expo Metro')
+            wait_for(lambda: open_page(api_url, expo_url), processes, 'public Expo Go link')
             print('MOBILE_PREVIEW_URL=' + api_url + '/_mobile/open', flush=True)
             print('Synthetic data only; expires within 55 minutes.', flush=True)
             deadline = time.monotonic() + 55 * 60
