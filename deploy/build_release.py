@@ -1,11 +1,11 @@
-"""Build a six-file release only; never include DB, config, mobile or credentials."""
+"""Build the reviewed server/web release; never include DB, config or credentials."""
 import argparse
 import hashlib
 import json
 from pathlib import Path
 import re
 import zipfile
-from actions_gateway import FILES, MAX_FILE, safe_path
+from actions_gateway import FILES, MAX_FILE, SCHEMA_CHANGE, safe_path
 
 
 def build(root, output, commit):
@@ -14,7 +14,8 @@ def build(root, output, commit):
     bodies = {name: safe_path(root, name).read_bytes() for name in FILES}
     if any(len(body) > MAX_FILE for body in bodies.values()):
         raise ValueError('Release file too large')
-    manifest = {'commit': commit, 'files': {n: hashlib.sha256(b).hexdigest() for n, b in bodies.items()}}
+    manifest = {'commit': commit, 'schema_change': SCHEMA_CHANGE,
+                'files': {n: hashlib.sha256(b).hexdigest() for n, b in bodies.items()}}
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for name, body in bodies.items():
             archive.writestr(name, body)
