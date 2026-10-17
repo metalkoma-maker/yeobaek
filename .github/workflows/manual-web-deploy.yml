@@ -1,5 +1,8 @@
-name: 여백 웹 수동 배포
+name: 여백 웹 배포
 on:
+  push:
+    branches: [main]
+    paths: ['.github/deploy-request.json']
   workflow_dispatch:
     inputs:
       action:
@@ -15,13 +18,25 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: 배포 요청 파일만 변경됐는지 확인
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BEFORE" =~ ^[0-9a-f]{40}$ && "$BEFORE" != 0000000000000000000000000000000000000000 ]]
+          git fetch --no-tags --depth=1 origin "$BEFORE"
+          python3 deploy/validate_deploy_request.py --before "$BEFORE" --commit "$GITHUB_SHA"
       - name: 가짜 데이터 단위 검증
         run: |
           python3 -m venv "$RUNNER_TEMP/test-venv"
@@ -48,9 +63,16 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: 운영 반영 직전 main 재확인
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_ref=$(git ls-remote --exit-code origin refs/heads/main)
+          [[ "$main_ref" == "$GITHUB_SHA"$'\t'refs/heads/main ]]
       - name: 입력과 SSH 설정 검증
         env:
-          DEPLOY_ACTION: ${{ inputs.action }}
+          DEPLOY_ACTION: ${{ github.event_name == 'push' && 'deploy' || inputs.action }}
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
@@ -94,7 +116,7 @@ jobs:
         run: sudo tailscale set --accept-routes=false
       - name: 수동 작업 실행 (서버에서 백업·건강 확인·실패 복원)
         env:
-          DEPLOY_ACTION: ${{ inputs.action }}
+          DEPLOY_ACTION: ${{ github.event_name == 'push' && 'deploy' || inputs.action }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
         shell: bash
         run: |

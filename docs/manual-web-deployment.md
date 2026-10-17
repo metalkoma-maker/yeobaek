@@ -22,7 +22,9 @@ sudo /usr/bin/python3 deploy/upgrade_code_deploy.py
 
 ## 이후 배포
 
-GitHub Actions의 **여백 웹 수동 배포**를 `main`에서 실행합니다. `inspect`는 조회만 합니다. `deploy`와 `rollback`도 먼저 서버를 조회하고 같은 결과의 fingerprint로 작업합니다. 입력할 해시는 없습니다. `production` Environment의 기존 승인·Tailscale OAuth·SSH 호스트 키 검증을 유지합니다. 서버 도구가 새 코드 배포 기능을 보고하지 않으면 작업은 거절됩니다.
+코덱스에서 운영 반영을 명시적으로 요청하면, 검증·리뷰한 기능 변경을 `main`에 반영한 뒤 **`.github/deploy-request.json`만 바꾸는 별도 PR**을 만들어 병합합니다. 이 파일의 `source_commit`은 병합 직전 `main` 커밋이고 `request_id`는 매 요청마다 새로 만든 32자리 16진수입니다. 해당 파일이 바뀌는 `main` push만 배포 workflow를 시작합니다. workflow는 변경 파일이 정확히 이 파일 하나인지, 요청의 `source_commit`이 실제 직전 커밋인지, 실행 커밋이 현재 `main`인지 테스트 전과 운영 접근 직전에 확인합니다. 조건이 다르면 서버에 접근하지 않습니다. 기능 PR을 병합하는 것만으로는 운영 배포가 시작되지 않습니다. 이렇게 하면 사용자가 GitHub 화면에서 배포 버튼을 누르거나 서버 터미널을 열 필요가 없습니다. 기존 `production` Environment의 승인 정책이 별도 검토를 요구하면 그 GitHub 승인만 필요할 수 있습니다.
+
+GitHub Actions의 **여백 웹 배포**를 `main`에서 수동 실행하는 경로도 유지합니다. `inspect`는 조회만 합니다. `deploy`와 `rollback`도 먼저 서버를 조회하고 같은 결과의 fingerprint로 작업합니다. 입력할 해시는 없습니다. `production` Environment의 기존 승인·Tailscale OAuth·SSH 호스트 키 검증을 유지합니다. 서버 도구가 새 코드 배포 기능을 보고하지 않으면 작업은 거절됩니다.
 
 `deploy`는 가짜 데이터 테스트와 브라우저 검증을 통과한 커밋에서 허용된 일곱 파일만 묶습니다. 서버는 배포 제외 코드의 변조, 서비스 상태, 파일 해시를 먼저 검사합니다. 이후 기존 코드 파일을 백업하고 서비스를 잠시 멈춰 SQLite 온라인 사본을 만듭니다. 코드 파일을 원자적으로 교체한 뒤 서비스를 시작하고, 화면 응답 해시·새 서버 기능 표식·새 표 구조를 검사합니다. 검사에 실패하면 이전 코드 파일을 복원하고 서비스를 다시 시작합니다. 중단 기록이 남으면 다음 배포를 차단하고 `rollback`으로 복구하도록 합니다.
 
