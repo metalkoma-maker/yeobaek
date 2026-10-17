@@ -21,9 +21,10 @@ PASSWORD = 'test-password-123'
 
 def tunnel_url(binary, config, directory, name, port, environment):
     log = (directory / (name + '.log')).open('w+')
+    local_host = 'localhost' if name == 'metro' else '127.0.0.1'
     process = subprocess.Popen([str(binary), 'tunnel', '--config', str(config),
                                 '--no-autoupdate', '--protocol', 'http2',
-                                '--url', f'http://127.0.0.1:{port}'],
+                                '--url', f'http://{local_host}:{port}'],
                                stdout=log, stderr=subprocess.STDOUT, env=environment)
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
@@ -115,7 +116,7 @@ def main():
                                      cwd=ROOT / 'mobile', stdout=metro_log,
                                      stderr=subprocess.STDOUT, env=environment)
             processes.append(metro)
-            wait_for(lambda: metro_status('http://127.0.0.1:8081'), processes, 'local Expo Metro', 90)
+            wait_for(lambda: metro_status('http://localhost:8081'), processes, 'local Expo Metro', 90)
             wait_for(lambda: marker(api_url, run_id, api_url), processes, 'public synthetic API')
             wait_for(lambda: public_login(api_url), processes, 'public test login')
             wait_for(lambda: metro_status(metro_url), processes, 'public Expo Metro')
