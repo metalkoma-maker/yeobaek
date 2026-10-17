@@ -107,6 +107,47 @@ class ActionsDeployTest(unittest.TestCase):
         self.assertFalse((self.state / 'pending.json').exists())
         self.assert_protected()
 
+    def test_wal_snapshot_with_read_only_database_directory(self):
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual(conn.execute('PRAGMA journal_mode=WAL').fetchone()[0], 'wal')
+            conn.execute('CREATE TABLE manuscript_order(user_id TEXT PRIMARY KEY, ids TEXT NOT NULL, version INTEGER NOT NULL)')
+            conn.execute('INSERT INTO manuscripts VALUES (?,?)', ('second-id', 'new data'))
+            conn.commit()
+        finally:
+            conn.close()
+        self.assertFalse(Path(str(self.database) + '-wal').exists())
+        original_mode = self.database.parent.stat().st_mode & 0o777
+        self.database.parent.chmod(0o500)
+        try:
+            with self.assertRaisesRegex(sqlite3.OperationalError, 'readonly database'):
+                with sqlite3.connect(self.database.as_uri() + '?mode=ro', uri=True) as conn:
+                    conn.execute('PRAGMA quick_check').fetchone()
+            target = self.state / 'backups' / 'wal-snapshot.sqlite3'
+            gateway.snapshot_database(self.database, target)
+            with sqlite3.connect(target) as copy:
+                self.assertEqual(copy.execute('SELECT body FROM manuscripts WHERE id=?', ('second-id',)).fetchone()[0], 'new data')
+            gateway.schema_ready(self.database)
+        finally:
+            self.database.parent.chmod(original_mode)
+
+    def test_snapshot_includes_uncheckpointed_wal(self):
+        conn = sqlite3.connect(self.database)
+        original_mode = self.database.parent.stat().st_mode & 0o777
+        try:
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('INSERT INTO manuscripts VALUES (?,?)', ('wal-id', 'in the WAL'))
+            conn.commit()
+            self.assertTrue(Path(str(self.database) + '-wal').exists())
+            self.database.parent.chmod(0o500)
+            target = self.state / 'backups' / 'pending-wal.sqlite3'
+            gateway.snapshot_database(self.database, target)
+            with sqlite3.connect(target) as copy:
+                self.assertEqual(copy.execute('SELECT body FROM manuscripts WHERE id=?', ('wal-id',)).fetchone()[0], 'in the WAL')
+        finally:
+            self.database.parent.chmod(original_mode)
+            conn.close()
+
     def test_missing_additive_schema_restores_code_but_preserves_database(self):
         self.instance.verify_schema = lambda: (_ for _ in ()).throw(ValueError('synthetic schema check failure'))
         with self.assertRaisesRegex(RuntimeError, 'original files restored and health verified'):

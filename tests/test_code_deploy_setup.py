@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+import zipfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -14,9 +15,28 @@ sys.path.insert(0, str(root / 'deploy'))
 spec = importlib.util.spec_from_file_location('upgrade_code_deploy', root / 'deploy/upgrade_code_deploy.py')
 setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
+repair_spec = importlib.util.spec_from_file_location('repair_wal_gateway', root / 'deploy/repair_wal_gateway.py')
+repair = importlib.util.module_from_spec(repair_spec)
+repair_spec.loader.exec_module(repair)
 
 
 class CodeDeploySetupTest(unittest.TestCase):
+    def test_single_file_repair_package_has_exact_gateway(self):
+        gateway = (root / 'deploy/actions_gateway.py').read_bytes()
+        self.assertEqual(repair.digest(gateway), repair.NEW_SHA256)
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary) / 'repair.pyz'
+            with zipfile.ZipFile(package, 'w') as archive:
+                archive.write(root / 'deploy/repair_wal_gateway.py', '__main__.py')
+                archive.writestr('actions_gateway.py', gateway)
+            with patch.object(sys, 'argv', [str(package)]):
+                self.assertEqual(repair.replacement_bytes(), gateway)
+            with zipfile.ZipFile(package, 'a') as archive:
+                archive.writestr('unexpected.txt', 'bad')
+            with patch.object(sys, 'argv', [str(package)]):
+                with self.assertRaisesRegex(ValueError, 'Unexpected repair package'):
+                    repair.replacement_bytes()
+
     def test_extra_ssh_authentication_path_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             account = SimpleNamespace(pw_dir=temporary)

@@ -13,6 +13,7 @@ from contextlib import closing
 from pathlib import Path
 import re
 import signal
+import shutil
 import sqlite3
 import stat
 import subprocess
@@ -130,7 +131,15 @@ def wait_health(expected, config):
 
 
 def schema_ready(database):
-    with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=5)) as conn:
+    # A WAL database with no sidecar still needs directory write access for a
+    # normal read-only SQLite connection. The deploy account deliberately has
+    # no such access. An immutable read is safe only when no WAL is present.
+    wal = Path(str(database) + '-wal')
+    if wal.exists():
+        uri = database.as_uri() + '?mode=ro'
+    else:
+        uri = database.as_uri() + '?mode=ro&immutable=1'
+    with closing(sqlite3.connect(uri, uri=True, timeout=5)) as conn:
         row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='manuscript_order'").fetchone()
         if not row or 'user_id TEXT PRIMARY KEY' not in row[0] or 'version INTEGER NOT NULL' not in row[0]:
             raise ValueError('Expected additive manuscript_order table is missing')
@@ -153,11 +162,35 @@ def snapshot_database(database, target):
     if target.exists():
         raise ValueError('Database snapshot already exists')
     try:
-        with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=10)) as source:
-            with closing(sqlite3.connect(target)) as copy:
-                source.backup(copy)
-                if copy.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
-                    raise ValueError('Database snapshot integrity check failed')
+        # The stopped service may have removed its -shm file. Opening the
+        # original WAL database with mode=ro would then try to create one in
+        # the protected data directory and fail. Copy the stopped DB and WAL
+        # into our private writable backup directory before using SQLite's
+        # online backup API. The original DB and its directory stay read-only.
+        with tempfile.TemporaryDirectory(prefix='.sqlite-source-', dir=target.parent) as work:
+            source_path = Path(work) / 'source.sqlite3'
+            wal = Path(str(database) + '-wal')
+            observed = {}
+            for original, destination in ((database, source_path), (wal, Path(str(source_path) + '-wal'))):
+                if original.exists():
+                    if original.is_symlink() or not original.is_file() or original.stat().st_nlink != 1:
+                        raise ValueError('Unsafe SQLite source file')
+                    before = original.stat()
+                    observed[original] = (before.st_ino, before.st_size, before.st_mtime_ns)
+                    shutil.copyfile(original, destination)
+                else:
+                    observed[original] = None
+            for original, expected in observed.items():
+                actual = original.stat() if original.exists() else None
+                if (None if actual is None else (actual.st_ino, actual.st_size, actual.st_mtime_ns)) != expected:
+                    raise ValueError('SQLite source changed during snapshot')
+            with closing(sqlite3.connect(source_path)) as source:
+                if source.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                    raise ValueError('Database source integrity check failed')
+                with closing(sqlite3.connect(target)) as copy:
+                    source.backup(copy)
+                    if copy.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                        raise ValueError('Database snapshot integrity check failed')
     except BaseException:
         target.unlink(missing_ok=True)
         raise
