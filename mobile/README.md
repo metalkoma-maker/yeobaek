@@ -8,6 +8,8 @@ PR3의 모바일 파일을 업데이트하면 GitHub Actions의 **모바일 앱 
 
 임시 주소는 가짜 원고 전용이고 만료됩니다. 실제 계정 정보는 입력하지 마세요. Expo Go의 계정·SDK 제한 때문에 아이폰에서 앱 열기가 거절되면 그 화면을 확인해 최초 계정 연결에 필요한 최소 단계만 안내합니다. Actions가 확인한 서버 응답만으로 아이폰 화면까지 검증됐다고 간주하지 않습니다.
 
+아이폰 Expo Go와 GitHub Actions의 Expo CLI는 **같은 Expo 계정**으로 로그인해야 합니다. 최초 1회, 아이폰 Expo Go에 로그인한 계정으로 [Expo access token](https://expo.dev/settings/access-tokens)을 만들고 저장소의 [Actions secrets](https://github.com/metalkoma-maker/yeobaek/settings/secrets/actions)에 `EXPO_TOKEN`이라는 이름으로 저장합니다. 토큰은 채팅이나 저장소 파일에 붙여넣지 않습니다. 이후 코덱스가 PR을 갱신해 임시 검토 주소와 QR을 다시 만들 수 있습니다. 토큰이 없거나 인증되지 않으면 워크플로는 주소를 발행하지 않고 중단합니다.
+
 운영 연결은 별도 `EXPO_PUBLIC_YEOBAEK_MODE=production` 설정으로만 켜집니다. 이 모드는 고정 주소 `https://yeobaek-write.duckdns.org`와 서버 식별 응답을 확인한 후 로그인합니다. 서버 주소 입력란은 표시하지 않으며 가짜 API 주소와 함께 설정하면 빌드가 거부됩니다. 실제 운영 계정으로 로그인하고 원고를 저장하는 실기기 검증은 사용자가 검토한 뒤 진행합니다. 운영 웹 배포나 DB 변경은 이 PR에 포함되지 않습니다.
 
 ## 무엇이 완료됐고 무엇이 필요한가

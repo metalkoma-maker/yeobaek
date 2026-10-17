@@ -37,6 +37,16 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
+          if [[ -z "${EXPO_TOKEN:-}" ]]; then
+            echo '::error::EXPO_TOKEN repository secret is required for iPhone Expo Go previews.'
+            exit 1
+          fi
+          expo_actor=$(cd mobile && ./node_modules/.bin/expo whoami)
+          if [[ -z "$expo_actor" || "$expo_actor" == 'Not logged in' ]]; then
+            echo '::error::EXPO_TOKEN did not authenticate Expo CLI.'
+            exit 1
+          fi
+          echo "Expo CLI account: $expo_actor"
           "$RUNNER_TEMP/mobile-venv/bin/python" -u tools/start_mobile_preview_tunnel.py > "$RUNNER_TEMP/mobile-preview.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/mobile-preview.pid"
           for attempt in $(seq 1 180); do
@@ -82,6 +92,11 @@ jobs:
           for attempt in $(seq 1 180); do
             count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == "mobile-preview-url")] | length')
             if [[ "$count" == 1 ]]; then break; fi
+            preview_failed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '[.jobs[] | select(.name == "preview" and .status == "completed" and .conclusion != "success")] | length')
+            if [[ "$preview_failed" != 0 ]]; then
+              echo '::error::The preview job ended without a review URL.'
+              exit 1
+            fi
             sleep 2
           done
           test "$count" == 1
