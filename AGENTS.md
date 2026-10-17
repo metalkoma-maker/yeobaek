@@ -14,5 +14,6 @@
 - Do not make the user switch between Codex, Codespaces, PowerShell, SSH, and browser settings or copy commands when Codex can perform the step. Prefer an automated or Codex-managed preview and provide a usable review link in chat.
 - If a step genuinely requires the user's device, account authentication, or initial permission setup, complete all independent work first. Explain why the step cannot be automated and give the smallest set of user actions together; continue the work after receiving the result.
 - When asking the user to open or check a preview or test site, include its full clickable URL in the same message so it can be copied directly.
+- When requesting a test result, state why the test matters, what has already been confirmed, the exact user steps, and what success or failure looks like. Keep the question self-contained even if earlier updates are collapsed.
 - Verify preview and deployment results with available tools before sharing links. Clearly distinguish verified results from checks that the current environment cannot perform.
 - Preserve the explicit user-approval requirement for production deployment and database writes, along with existing backup, health-check, and rollback safeguards.
