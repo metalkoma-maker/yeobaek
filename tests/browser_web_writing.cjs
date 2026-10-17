@@ -91,7 +91,8 @@ async function performanceCheck(browser,preUndo){
     return {titleBottom:title.bottom,paneTop:pane.top,bodyTop:body.top,headerTop:header.top,headerBottom:header.bottom,scroll:document.querySelector('#editor').scrollTop,windowScroll:window.scrollY,horizontal:document.querySelector('#editor').scrollWidth>document.querySelector('#editor').clientWidth};
    });
    assert(dimensions.titleBottom<dimensions.paneTop);assert(dimensions.bodyTop<dimensions.paneTop);assert(dimensions.headerTop>=0&&dimensions.headerBottom<viewport.height);assert.equal(dimensions.windowScroll,0);assert.equal(dimensions.horizontal,false);
-   await page.click('#fontToggle');await page.locator('[data-size="18"]').click();await page.waitForFunction(()=>document.querySelector('#body').style.height!=='' && getComputedStyle(document.querySelector('#body')).fontSize==='24px');
+   // Font style changes immediately; the textarea height follows on its RAF.
+   await page.click('#fontToggle');await page.locator('[data-size="18"]').click();await page.waitForFunction(()=>bodySizeFrame===null && document.querySelector('#body').style.height!=='' && getComputedStyle(document.querySelector('#body')).fontSize==='24px');
    assert.equal(await page.locator('#title').evaluate(n=>n.getBoundingClientRect().width),originalWidth);
    const fit=await page.locator('#body').evaluate(n=>({scroll:n.scrollHeight,height:n.clientHeight}));assert(fit.scroll<=fit.height+1);
    await page.locator('#editor').evaluate(n=>n.scrollTop=0);assert.equal(await page.locator('#body').evaluate(n=>n.scrollTop),0);

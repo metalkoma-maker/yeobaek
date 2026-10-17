@@ -1,6 +1,7 @@
-import os, sqlite3, secrets, hashlib, hmac, time, re
+import os, sqlite3, secrets, hashlib, hmac, time, re, json
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, g
 
 app = Flask(__name__, static_folder='static')
@@ -29,6 +30,7 @@ def init():
         CREATE TABLE IF NOT EXISTS manuscripts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 0,updated INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS manuscript_history(manuscript_id TEXT NOT NULL REFERENCES manuscripts(id) ON DELETE CASCADE,version INTEGER NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(manuscript_id,version));
         CREATE TABLE IF NOT EXISTS daily(manuscript_id TEXT REFERENCES manuscripts(id) ON DELETE CASCADE,day TEXT NOT NULL,delta INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(manuscript_id,day));
+        CREATE TABLE IF NOT EXISTS manuscript_order(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,ids TEXT NOT NULL,version INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,started INTEGER NOT NULL,count INTEGER NOT NULL);
         ''')
         db().commit()
@@ -59,6 +61,28 @@ def headers(response):
     response.headers['Referrer-Policy']='same-origin'
     response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     if request.path.startswith('/api/'): response.headers['Cache-Control']='no-store'
+    return response
+
+@app.after_request
+def admin_brand(response):
+    # admin.html is outside the restricted release bundle. Keep the served name
+    # current even when the protected server copy still has the original brand.
+    if request.path != '/admin' or request.method != 'GET' or response.status_code not in (200, 304):
+        return response
+    source = (Path(app.static_folder) / 'admin.html').read_bytes()
+    branded = (source.replace('<title>여백 · 관리자</title>'.encode(),
+                              '<title>소설여백 · 관리자</title>'.encode())
+                     .replace('class="brand">여백</a>'.encode(),
+                              'class="brand">소설여백</a>'.encode()))
+    original_body = response.response
+    if hasattr(original_body, 'close'):
+        original_body.close()
+    response.status_code = 200
+    response.direct_passthrough = False
+    response.set_data(branded)
+    response.headers.pop('ETag', None)
+    response.headers.pop('Last-Modified', None)
+    response.headers['Cache-Control'] = 'no-store'
     return response
 
 def session_response(uid,email):
@@ -109,9 +133,42 @@ def pack(row):
     data.update(total=count(data['body']),today=delta[0] if delta else 0,day=day())
     return data
 
+def manuscript_list_state():
+    rows=db().execute('SELECT * FROM manuscripts WHERE user_id=? ORDER BY updated DESC,rowid DESC',(g.user['user_id'],)).fetchall()
+    saved=db().execute('SELECT ids,version FROM manuscript_order WHERE user_id=?',(g.user['user_id'],)).fetchone()
+    if saved:
+        rank={mid:i for i,mid in enumerate(json.loads(saved['ids']))}
+        # New manuscripts appear first; writing never moves manually ordered items.
+        rows.sort(key=lambda row:(1,rank[row['id']]) if row['id'] in rank else (0,0))
+    return rows,{'ids':[row['id'] for row in rows],'version':saved['version'] if saved else 0}
+
+@app.route('/api/manuscript-order',methods=['GET','PUT'])
+def manuscript_order():
+    if request.method=='GET':
+        return jsonify(manuscript_list_state()[1])
+    data=request.get_json()
+    if not isinstance(data,dict): return fail('원고 순서를 확인해 주세요.')
+    ids=data.get('ids'); version=data.get('version')
+    if (not isinstance(ids,list) or any(not isinstance(mid,str) or not 1<=len(mid)<=128 for mid in ids)
+            or len(set(ids))!=len(ids) or type(version) is not int or version<0):
+        return fail('원고 순서를 확인해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    _,current=manuscript_list_state()
+    if version!=current['version'] or set(ids)!=set(current['ids']):
+        db().rollback()
+        return jsonify(error='다른 기기에서 원고 목록이 바뀌었습니다. 확인 후 다시 옮겨 주세요.',current=current),409
+    if ids==current['ids']:
+        db().rollback()
+        return jsonify(current)
+    updated={'ids':ids,'version':current['version']+1}
+    db().execute('INSERT INTO manuscript_order(user_id,ids,version) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET ids=excluded.ids,version=excluded.version',
+                 (g.user['user_id'],json.dumps(ids),updated['version']))
+    db().commit()
+    return jsonify(updated)
+
 @app.route('/api/manuscripts',methods=['GET','POST'])
 def manuscripts():
-    if request.method=='GET': return jsonify([pack(x) for x in db().execute('SELECT * FROM manuscripts WHERE user_id=? ORDER BY updated DESC',(g.user['user_id'],)).fetchall()])
+    if request.method=='GET': return jsonify([pack(row) for row in manuscript_list_state()[0]])
     mid=secrets.token_hex(16)
     db().execute('INSERT INTO manuscripts(id,user_id,title,updated) VALUES(?,?,?,?)',(mid,g.user['user_id'],'제목 없는 원고',int(time.time()))); db().commit()
     return jsonify(pack(owned(mid))),201
@@ -152,6 +209,17 @@ def history_item(mid,version):
 
 @app.get('/')
 def index(): return send_from_directory('static','index.html')
+@app.get('/__app_manifest__')
+def app_manifest():
+    # This route is deployable with app.py even while manifest.json is protected.
+    manifest = json.loads((Path(app.static_folder) / 'manifest.json').read_text(encoding='utf-8'))
+    manifest['name'] = manifest['short_name'] = '소설여백'
+    response = app.response_class(json.dumps(manifest, ensure_ascii=False),
+                                  mimetype='application/manifest+json')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+@app.get('/__deployment_health__')
+def deployment_health(): return jsonify(api='manuscript-order-v1')
 @app.get('/<path:path>')
 def assets(path): return send_from_directory('static',path)
 
