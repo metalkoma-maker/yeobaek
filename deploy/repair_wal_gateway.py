@@ -9,8 +9,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
+import zipfile
 
 GATEWAY = Path('/usr/local/libexec/yeobaek-actions-gateway')
 ACCOUNT = 'yeobaek-deploy'
@@ -20,6 +22,19 @@ NEW_SHA256 = '493fa22e1e65dd8f03ba2ba39575fc4d82b59a4a997dc07a3da7a14aa0481921'
 
 def digest(contents):
     return hashlib.sha256(contents).hexdigest()
+
+
+def replacement_bytes():
+    archive = Path(sys.argv[0])
+    if archive.suffix == '.pyz' and zipfile.is_zipfile(archive):
+        with zipfile.ZipFile(archive) as package:
+            if set(package.namelist()) != {'__main__.py', 'actions_gateway.py'}:
+                raise ValueError('Unexpected repair package contents')
+            return package.read('actions_gateway.py')
+    source = Path(__file__).with_name('actions_gateway.py')
+    if source.is_symlink() or not source.is_file():
+        raise ValueError('Reviewed replacement gateway file is missing')
+    return source.read_bytes()
 
 
 def install_bytes(target, contents):
@@ -55,8 +70,8 @@ def verify_inspect():
 def main():
     if os.geteuid() != 0:
         raise ValueError('Root is required for this one-time gateway repair')
-    source = Path(__file__).with_name('actions_gateway.py')
-    if source.is_symlink() or not source.is_file() or digest(source.read_bytes()) != NEW_SHA256:
+    replacement = replacement_bytes()
+    if digest(replacement) != NEW_SHA256:
         raise ValueError('Reviewed replacement gateway hash does not match')
     if GATEWAY.is_symlink() or not GATEWAY.is_file() or GATEWAY.stat().st_uid != 0 or GATEWAY.stat().st_mode & 0o022:
         raise ValueError('Installed gateway must be a protected root-owned regular file')
@@ -72,7 +87,7 @@ def main():
     os.chown(backup, 0, 0)
     os.chmod(backup, 0o700)
     try:
-        install_bytes(GATEWAY, source.read_bytes())
+        install_bytes(GATEWAY, replacement)
         fingerprint = verify_inspect()
     except BaseException:
         install_bytes(GATEWAY, previous)

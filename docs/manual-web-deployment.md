@@ -4,7 +4,7 @@
 
 최초 코드 배포에서 `attempt to write a readonly database`가 나왔다면 배포 도구가 이전 코드와 서비스 건강 상태를 복원했는지 Actions 로그와 `inspect`에서 먼저 확인합니다. WAL DB를 읽는 동안 배포 계정에 원고 DB 폴더의 쓰기 권한을 추가하지 않습니다. 수정된 게이트웨이는 서비스를 멈춘 뒤 DB와 남은 WAL을 배포 상태 폴더 안의 임시 복사본으로 가져와 SQLite 사본을 만듭니다. 추가 표 검증은 WAL이 없는 DB를 읽기 전용으로 열 수 있도록 조정했습니다.
 
-리뷰한 같은 커밋의 `deploy/actions_gateway.py`와 `deploy/repair_wal_gateway.py`를 서버의 같은 폴더에 복사한 뒤 관리자 권한으로 `sudo /usr/bin/python3 deploy/repair_wal_gateway.py`를 **한 번** 실행합니다. 스크립트는 설치된 이전 파일과 새 파일의 SHA256을 고정값으로 확인하고, 기존 게이트웨이 사본을 남기며, 제한된 계정의 `inspect`가 성공하지 않으면 이전 파일로 돌립니다. 앱 파일, DB, 서비스는 변경하지 않습니다. 이후 GitHub Actions에서 `deploy`를 새로 실행합니다. 실패한 작업의 `Re-run jobs`는 기존 커밋/실행 문맥을 재사용하므로 새 커밋의 수정을 반영하지 않습니다.
+리뷰한 같은 커밋의 `deploy/actions_gateway.py`와 `deploy/repair_wal_gateway.py`를 서버의 같은 폴더에 복사한 뒤 관리자 권한으로 `sudo /usr/bin/python3 deploy/repair_wal_gateway.py`를 **한 번** 실행합니다. 또는 두 파일을 담은 검증된 `.pyz` 단일 파일을 서버에 복사해 `sudo /usr/bin/python3 /경로/복구파일.pyz`를 한 번 실행합니다. 스크립트는 설치된 이전 파일과 새 파일의 SHA256을 고정값으로 확인하고, 기존 게이트웨이 사본을 남기며, 제한된 계정의 `inspect`가 성공하지 않으면 이전 파일로 돌립니다. 앱 파일, DB, 서비스는 변경하지 않습니다. 이후 GitHub Actions에서 `deploy`를 새로 실행합니다. 실패한 작업의 `Re-run jobs`는 기존 커밋/실행 문맥을 재사용하므로 새 커밋의 수정을 반영하지 않습니다.
 
 현재 배포 대상은 `app.py`와 웹 파일 6개입니다. 기존 회원·원고·수정 이력·자동 백업 파일은 배포 ZIP에 넣지 않습니다. 이번 서버 변경은 앱 시작 시 `manuscript_order` 표 하나를 추가합니다. 원고 본문이나 기존 표를 다시 쓰지 않습니다.
 
