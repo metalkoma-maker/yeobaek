@@ -9,6 +9,7 @@ on:
       - '.github/workflows/mobile-preview.yml'
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: mobile-preview-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -68,3 +69,22 @@ jobs:
             tail -30 "$RUNNER_TEMP/mobile-preview.log"
             exit 1
           fi
+  report:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: 임시 검토 주소 기록
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 180); do
+            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == "mobile-preview-url")] | length')
+            if [[ "$count" == 1 ]]; then break; fi
+            sleep 2
+          done
+          test "$count" == 1
+          gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n mobile-preview-url -D "$RUNNER_TEMP/mobile-preview-link"
+          echo 'MOBILE_PREVIEW_URL='
+          cat "$RUNNER_TEMP/mobile-preview-link/mobile-preview-url.txt"
