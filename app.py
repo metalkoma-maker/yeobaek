@@ -1,6 +1,7 @@
 import os, sqlite3, secrets, hashlib, hmac, time, re, json
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, g
 
 app = Flask(__name__, static_folder='static')
@@ -60,6 +61,28 @@ def headers(response):
     response.headers['Referrer-Policy']='same-origin'
     response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     if request.path.startswith('/api/'): response.headers['Cache-Control']='no-store'
+    return response
+
+@app.after_request
+def admin_brand(response):
+    # admin.html is outside the restricted release bundle. Keep the served name
+    # current even when the protected server copy still has the original brand.
+    if request.path != '/admin' or request.method != 'GET' or response.status_code not in (200, 304):
+        return response
+    source = (Path(app.static_folder) / 'admin.html').read_bytes()
+    branded = (source.replace('<title>여백 · 관리자</title>'.encode(),
+                              '<title>소설여백 · 관리자</title>'.encode())
+                     .replace('class="brand">여백</a>'.encode(),
+                              'class="brand">소설여백</a>'.encode()))
+    original_body = response.response
+    if hasattr(original_body, 'close'):
+        original_body.close()
+    response.status_code = 200
+    response.direct_passthrough = False
+    response.set_data(branded)
+    response.headers.pop('ETag', None)
+    response.headers.pop('Last-Modified', None)
+    response.headers['Cache-Control'] = 'no-store'
     return response
 
 def session_response(uid,email):
@@ -186,6 +209,15 @@ def history_item(mid,version):
 
 @app.get('/')
 def index(): return send_from_directory('static','index.html')
+@app.get('/__app_manifest__')
+def app_manifest():
+    # This route is deployable with app.py even while manifest.json is protected.
+    manifest = json.loads((Path(app.static_folder) / 'manifest.json').read_text(encoding='utf-8'))
+    manifest['name'] = manifest['short_name'] = '소설여백'
+    response = app.response_class(json.dumps(manifest, ensure_ascii=False),
+                                  mimetype='application/manifest+json')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 @app.get('/__deployment_health__')
 def deployment_health(): return jsonify(api='manuscript-order-v1')
 @app.get('/<path:path>')
