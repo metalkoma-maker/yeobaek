@@ -1,0 +1,23 @@
+name: 소설여백 임시 검토 주소
+on:
+  pull_request:
+    types: [synchronize]
+    paths: ['.github/workflows/temporary-brand-preview.yml']
+permissions:
+  contents: read
+jobs:
+  preview:
+    if: github.event.pull_request.number == 9 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: 가짜 데이터 서버 준비
+        run: |
+          python3 -m venv "$RUNNER_TEMP/preview-venv"
+          "$RUNNER_TEMP/preview-venv/bin/pip" install -r requirements.txt
+      - name: 임시 HTTPS 주소와 로그인 확인
+        run: |
+          timeout --foreground --signal=INT 60m "$RUNNER_TEMP/preview-venv/bin/python" -u tools/start_web_preview_tunnel.py

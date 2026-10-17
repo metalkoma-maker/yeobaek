@@ -1,6 +1,6 @@
 """One-command, synthetic-only preview through a temporary Cloudflare URL.
 
-Run with the project's Python environment in Codespaces. No Cloudflare login,
+Run with the project's Python environment in Codespaces or GitHub Actions. No Cloudflare login,
 system installation, production data, or GitHub forwarded port is used.
 """
 import hashlib
@@ -120,8 +120,8 @@ def wait_for_preview(base_url, origin, run_id, processes, *, public=False):
 
 
 def main():
-    if os.environ.get('CODESPACES') != 'true':
-        raise RuntimeError('이 명령은 GitHub Codespaces 터미널에서 실행하세요.')
+    if os.environ.get('CODESPACES') != 'true' and os.environ.get('GITHUB_ACTIONS') != 'true':
+        raise RuntimeError('이 명령은 GitHub Codespaces 또는 Actions에서 실행하세요.')
     # Catch dependency errors before downloading or publishing a tunnel.
     import flask  # noqa: F401
     tunnel = server = None
