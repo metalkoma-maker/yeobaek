@@ -83,7 +83,7 @@ def metro_status(url):
 def expo_go_link(url):
     with urllib.request.urlopen(url + '/_expo/open?platform=ios&runtime=expo', timeout=8) as response:
         info = json.load(response)
-    link = info.get('platforms', {}).get('ios', {}).get('url')
+    link = info.get('url')
     if not isinstance(link, str) or not link.startswith('exp://'):
         raise RuntimeError('Expo CLI did not provide an iOS Expo Go link')
     return link
@@ -126,7 +126,7 @@ def main():
             environment.update(YEOBAEK_MOBILE_PREVIEW='true', EXPO_PUBLIC_YEOBAEK_MODE='synthetic',
                                EXPO_PUBLIC_TEST_API_URL=api_url, EXPO_PACKAGER_PROXY_URL=metro_url,
                                YEOBAEK_EXPO_LINK=expo_url,
-                               YEOBAEK_TEST_RUN_ID=run_id, CI='1', EXPO_OFFLINE='1')
+                               YEOBAEK_TEST_RUN_ID=run_id, CI='1')
             api_log = (directory / 'server.log').open('w+')
             logs.append(api_log)
             api = subprocess.Popen([sys.executable, '-u', str(ROOT / 'tools/run_mobile_test.py')],
