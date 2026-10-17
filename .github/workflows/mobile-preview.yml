@@ -31,8 +31,40 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/mobile-venv"
           "$RUNNER_TEMP/mobile-venv/bin/pip" install -r requirements.txt
           npm --prefix mobile ci --ignore-scripts --no-audit --no-fund
-      - name: 임시 아이폰 검토 주소 실행
+      - name: 임시 아이폰 검토 주소 시작
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          "$RUNNER_TEMP/mobile-venv/bin/python" -u tools/start_mobile_preview_tunnel.py
+          set -euo pipefail
+          "$RUNNER_TEMP/mobile-venv/bin/python" -u tools/start_mobile_preview_tunnel.py > "$RUNNER_TEMP/mobile-preview.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/mobile-preview.pid"
+          for attempt in $(seq 1 180); do
+            if grep -q '^MOBILE_PREVIEW_URL=' "$RUNNER_TEMP/mobile-preview.log"; then
+              sed -n 's/^MOBILE_PREVIEW_URL=//p' "$RUNNER_TEMP/mobile-preview.log" | head -1 > "$RUNNER_TEMP/mobile-preview-url.txt"
+              cat "$RUNNER_TEMP/mobile-preview-url.txt"
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/mobile-preview.pid")" 2>/dev/null; then
+              tail -30 "$RUNNER_TEMP/mobile-preview.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          tail -30 "$RUNNER_TEMP/mobile-preview.log"
+          exit 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-preview-url
+          path: ${{ runner.temp }}/mobile-preview-url.txt
+          retention-days: 1
+          if-no-files-found: error
+      - name: 검토 주소 유지
+        run: |
+          set -euo pipefail
+          preview_pid=$(cat "$RUNNER_TEMP/mobile-preview.pid")
+          started=$SECONDS
+          while kill -0 "$preview_pid" 2>/dev/null; do sleep 5; done
+          if (( SECONDS - started < 3200 )); then
+            tail -30 "$RUNNER_TEMP/mobile-preview.log"
+            exit 1
+          fi
