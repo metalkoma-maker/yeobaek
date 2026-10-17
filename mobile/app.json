@@ -1,1 +1,20 @@
-{"expo":{"name":"소설여백 테스트","slug":"yeobaek-test","version":"0.1.0","orientation":"portrait","userInterfaceStyle":"light","ios":{"supportsTablet":false},"plugins":[]}}
+{
+  "expo": {
+    "name": "소설여백",
+    "slug": "soseol-yeobaek",
+    "owner": "bigssong",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.metalkomamaker.soseolyeobaek",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "plugins": []
+  }
+}

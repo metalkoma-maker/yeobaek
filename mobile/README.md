@@ -2,7 +2,9 @@
 
 Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 수정일, 새 원고/작성, 0.7초 자동저장, 전체 글자 수/오늘 증감을 구현했습니다. 웹과 같은 Flask 계정·원고 API, 세션 쿠키, CSRF, version/409 충돌 검사를 사용합니다. 기본 실행은 새 임시 DB와 가짜 계정만 사용합니다. 운영 계정·DB·원고를 복사하지 않습니다. 운영 모드 코드는 준비했지만 아직 실기기에서 검증하거나 배포하지 않았습니다. 현재 아이폰 검토는 Expo Go 안에서 앱을 실행하는 방식입니다. 홈 화면에서 독립 아이콘으로 여는 설치용 iOS 앱은 아직 빌드하지 않았습니다.
 
-장기 목표는 홈 화면의 독립 앱 아이콘과 App Store 배포입니다. 현재 Expo Go에서 기능과 저장 보호를 검증한 뒤, 앱 아이콘·식별자·배포 설정을 정하고 설치용 iOS 빌드를 만들 계획입니다. TestFlight 및 App Store 배포에는 Apple Developer Program 가입, 앱 정보·개인정보 고지 준비, 심사 제출이 이어집니다. 빌드만으로 App Store에 게시되지는 않습니다.
+장기 목표는 홈 화면의 독립 앱 아이콘과 App Store 배포입니다. 앱 이름·아이콘·iOS 식별자와 EAS 빌드 프로필을 준비했습니다. 현재 설정의 식별자 `com.metalkomamaker.soseolyeobaek`는 Apple 등록 전에 확인할 값입니다. Apple 계정 없이 가능한 시뮬레이터 독립 빌드를 먼저 검증하고, 실제 아이폰 설치용 빌드는 Apple Developer 서명 설정 후 진행합니다. TestFlight 및 App Store 배포에는 Apple Developer Program 가입, 앱 정보·개인정보 고지 준비, 심사 제출이 이어집니다. 빌드만으로 App Store에 게시되지는 않습니다.
+
+`mobile/eas.json`의 `simulator`와 `production` 프로필 모두 고정 운영 HTTPS 주소를 쓰도록 설정했습니다. 시뮬레이터 빌드는 iPhone 실기기에 설치할 수 없습니다. 실제 계정 로그인·원고 저장은 아직 검증하지 않았으므로 독립 앱을 운영 계정에 연결하는 테스트는 별도 검토가 필요합니다. `mobile-build/ios-simulator-*` 브랜치에 푸시하면 GitHub Actions가 Expo 토큰으로 EAS 프로젝트를 연결하고 시뮬레이터 빌드를 검증합니다. 생성된 EAS 프로젝트 ID는 검증 후 앱 설정에 반영합니다. 이 워크플로는 TestFlight 제출이나 App Store 게시를 하지 않습니다.
 
 ## 코덱스 채팅에서 검토하기
 
