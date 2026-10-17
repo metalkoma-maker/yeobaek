@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "소설여백",
+    "slug": "soseol-yeobaek",
+    "owner": "bigssong",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.metalkomamaker.soseolyeobaek",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "48cbdc86-538b-4b3d-b2bc-c7ce86f8e1ff"
+      }
+    },
+    "plugins": []
+  }
+}
