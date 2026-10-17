@@ -186,6 +186,8 @@ def history_item(mid,version):
 
 @app.get('/')
 def index(): return send_from_directory('static','index.html')
+@app.get('/__deployment_health__')
+def deployment_health(): return jsonify(api='manuscript-order-v1')
 @app.get('/<path:path>')
 def assets(path): return send_from_directory('static',path)
 
