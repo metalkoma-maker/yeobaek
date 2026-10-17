@@ -8,6 +8,8 @@ Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 �
 
 2026-10-17 GitHub Actions의 [독립 iOS 시뮬레이터 빌드](https://github.com/metalkoma-maker/yeobaek/actions/runs/39027123439)가 성공했습니다. 연결된 [Expo 프로젝트](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek)의 ID를 `app.json`에 저장했습니다. [빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/4ce02108-b856-41ae-8735-deacd9423774)은 독립 앱 패키징의 성공 증거이며 실제 iPhone 설치나 운영 계정 사용을 검증한 결과는 아닙니다.
 
+Apple 서명 정보가 EAS에 준비되면 코덱스가 `mobile-build/ios-device-*` 브랜치를 푸시해 설치용 빌드를 시작할 수 있습니다. 이 작업은 운영 API의 공개 식별 응답을 읽기 전용으로 확인하고 앱 검사를 거친 뒤 `production` 프로필로 IPA를 빌드합니다. 실제 운영 로그인·원고 저장은 빌드 과정에서 실행하지 않습니다. 빌드 완료 뒤 TestFlight 업로드와 아이폰 설치는 별도 단계이며 자동 제출하지 않습니다.
+
 ## 코덱스 채팅에서 검토하기
 
 PR3의 모바일 파일을 업데이트하면 GitHub Actions의 **모바일 앱 검증**이 타입·저장 보호 테스트와 iOS 번들 두 모드를 검사합니다. **소설여백 아이폰 임시 검토 주소** 작업은 가짜 API와 Expo 서버를 약 55분 동안 실행하고 외부 로그인·원고 조회와 Expo 서버 응답을 검사합니다. 코덱스가 작업 로그에서 `MOBILE_PREVIEW_URL`을 확인해 채팅에 전달합니다. 아이폰에서는 코덱스가 제공한 QR을 기본 카메라로 스캔해 Expo Go로 엽니다. 테스트 웹 주소도 같은 채팅에 전달합니다. 코드스페이스나 PowerShell 명령은 필요하지 않습니다.
