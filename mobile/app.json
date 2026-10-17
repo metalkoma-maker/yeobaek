@@ -15,6 +15,11 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
+    "extra": {
+      "eas": {
+        "projectId": "48cbdc86-538b-4b3d-b2bc-c7ce86f8e1ff"
+      }
+    },
     "plugins": []
   }
 }

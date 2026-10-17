@@ -4,7 +4,9 @@ Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 �
 
 장기 목표는 홈 화면의 독립 앱 아이콘과 App Store 배포입니다. 앱 이름·아이콘·iOS 식별자와 EAS 빌드 프로필을 준비했습니다. 현재 설정의 식별자 `com.metalkomamaker.soseolyeobaek`는 Apple 등록 전에 확인할 값입니다. Apple 계정 없이 가능한 시뮬레이터 독립 빌드를 먼저 검증하고, 실제 아이폰 설치용 빌드는 Apple Developer 서명 설정 후 진행합니다. TestFlight 및 App Store 배포에는 Apple Developer Program 가입, 앱 정보·개인정보 고지 준비, 심사 제출이 이어집니다. 빌드만으로 App Store에 게시되지는 않습니다.
 
-`mobile/eas.json`의 `simulator`와 `production` 프로필 모두 고정 운영 HTTPS 주소를 쓰도록 설정했습니다. 시뮬레이터 빌드는 iPhone 실기기에 설치할 수 없습니다. 실제 계정 로그인·원고 저장은 아직 검증하지 않았으므로 독립 앱을 운영 계정에 연결하는 테스트는 별도 검토가 필요합니다. `mobile-build/ios-simulator-*` 브랜치에 푸시하면 GitHub Actions가 Expo 토큰으로 EAS 프로젝트를 연결하고 시뮬레이터 빌드를 검증합니다. 생성된 EAS 프로젝트 ID는 검증 후 앱 설정에 반영합니다. 이 워크플로는 TestFlight 제출이나 App Store 게시를 하지 않습니다.
+`mobile/eas.json`의 `simulator`와 `production` 프로필 모두 고정 운영 HTTPS 주소를 쓰도록 설정했습니다. 시뮬레이터 빌드는 iPhone 실기기에 설치할 수 없습니다. 실제 계정 로그인·원고 저장은 아직 검증하지 않았으므로 독립 앱을 운영 계정에 연결하는 테스트는 별도 검토가 필요합니다. `mobile-build/ios-simulator-*` 브랜치에 푸시하면 GitHub Actions가 Expo 토큰으로 EAS 프로젝트를 확인하고 시뮬레이터 빌드를 검증합니다. 이 워크플로는 TestFlight 제출이나 App Store 게시를 하지 않습니다.
+
+2026-10-17 GitHub Actions의 [독립 iOS 시뮬레이터 빌드](https://github.com/metalkoma-maker/yeobaek/actions/runs/39027123439)가 성공했습니다. 연결된 [Expo 프로젝트](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek)의 ID를 `app.json`에 저장했습니다. [빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/4ce02108-b856-41ae-8735-deacd9423774)은 독립 앱 패키징의 성공 증거이며 실제 iPhone 설치나 운영 계정 사용을 검증한 결과는 아닙니다.
 
 ## 코덱스 채팅에서 검토하기
 
