@@ -1,0 +1,38 @@
+name: 소설여백 아이폰 임시 검토 주소
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'tools/run_mobile_test.py'
+      - 'tools/mobile_test_proxy.py'
+      - 'tools/start_mobile_preview_tunnel.py'
+      - '.github/workflows/mobile-preview.yml'
+permissions:
+  contents: read
+concurrency:
+  group: mobile-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: 가짜 데이터 실행 준비
+        run: |
+          python3 -m venv "$RUNNER_TEMP/mobile-venv"
+          "$RUNNER_TEMP/mobile-venv/bin/pip" install -r requirements.txt
+          npm --prefix mobile ci --ignore-scripts --no-audit --no-fund
+      - name: 임시 아이폰 검토 주소 실행
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          "$RUNNER_TEMP/mobile-venv/bin/python" -u tools/start_mobile_preview_tunnel.py

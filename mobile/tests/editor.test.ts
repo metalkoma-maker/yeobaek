@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Editor, Draft, count, koreaDay } from '../src/editor';
-import { Api, ApiError, Manuscript, serverAddress } from '../src/api';
+import { Api, ApiError, buildEndpoint, Manuscript, PRODUCTION_ORIGIN, serverAddress } from '../src/api';
 import { createDraftStore } from '../src/draftStorage';
 const doc = (): Manuscript => ({ id: 'fake', title: '가짜 원고', body: '가', version: 1, total: 1, today: 1, day: koreaDay(), updated: 1 });
 function storage() {
@@ -77,7 +77,7 @@ test('native API requests include cookie credentials, CSRF and version; errors r
   try { await assert.rejects(client.save(doc()), (error: unknown) => error instanceof ApiError && error.status === 409 && error.current?.version === 2); }
   finally { globalThis.fetch = original; }
 });
-test('only explicitly configured Codespaces HTTPS API allowed; public production remains blocked', () => {
+test('only explicitly configured synthetic HTTPS API allowed; public production remains blocked', () => {
   const old = process.env.EXPO_PUBLIC_TEST_API_URL;
   const address = 'https://synthetic-demo-8000.app.github.dev';
   try {
@@ -87,6 +87,9 @@ test('only explicitly configured Codespaces HTTPS API allowed; public production
     for (const url of ['http://synthetic-demo-8000.app.github.dev', 'https://other-demo-8000.app.github.dev', address + '/api', 'https://synthetic-demo-8081.app.github.dev']) assert.throws(() => serverAddress(url));
     process.env.EXPO_PUBLIC_TEST_API_URL = 'https://example.com';
     assert.throws(() => serverAddress('https://example.com'));
+    process.env.EXPO_PUBLIC_TEST_API_URL = 'https://synthetic-preview.trycloudflare.com';
+    assert.equal(serverAddress(process.env.EXPO_PUBLIC_TEST_API_URL), process.env.EXPO_PUBLIC_TEST_API_URL);
+    assert.throws(() => serverAddress('https://different-preview.trycloudflare.com'));
   } finally { if (old === undefined) delete process.env.EXPO_PUBLIC_TEST_API_URL; else process.env.EXPO_PUBLIC_TEST_API_URL = old; }
 });
 test('login refuses a server without synthetic marker before transmitting credentials', async () => {
@@ -98,6 +101,49 @@ test('login refuses a server without synthetic marker before transmitting creden
   }) as typeof fetch;
   try { await assert.rejects(new Api('http://127.0.0.1:8000').login('fake@example.com', 'fake'), /로그인을 중단/); assert.equal(requests, 1); }
   finally { globalThis.fetch = old; }
+});
+test('production mode pins the HTTPS server and rejects mixed test configuration', () => {
+  const oldMode = process.env.EXPO_PUBLIC_YEOBAEK_MODE;
+  const oldTest = process.env.EXPO_PUBLIC_TEST_API_URL;
+  try {
+    delete process.env.EXPO_PUBLIC_TEST_API_URL;
+    process.env.EXPO_PUBLIC_YEOBAEK_MODE = 'production';
+    assert.deepEqual(buildEndpoint(), { origin: PRODUCTION_ORIGIN, mode: 'production' });
+    assert.throws(() => new Api('https://other.example.test', 'production'));
+    process.env.EXPO_PUBLIC_TEST_API_URL = 'https://synthetic-demo-8000.app.github.dev';
+    assert.throws(buildEndpoint, /함께 설정/);
+    process.env.EXPO_PUBLIC_YEOBAEK_MODE = 'unknown';
+    assert.throws(buildEndpoint, /알 수 없는/);
+  } finally {
+    if (oldMode === undefined) delete process.env.EXPO_PUBLIC_YEOBAEK_MODE; else process.env.EXPO_PUBLIC_YEOBAEK_MODE = oldMode;
+    if (oldTest === undefined) delete process.env.EXPO_PUBLIC_TEST_API_URL; else process.env.EXPO_PUBLIC_TEST_API_URL = oldTest;
+  }
+});
+test('production login checks the server marker before sending credentials', async () => {
+  const old = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (url, options) => {
+    calls.push(String(url));
+    if (calls.length === 1) {
+      assert.equal(url, PRODUCTION_ORIGIN + '/__deployment_health__');
+      assert.equal(options?.body, undefined);
+      return new Response(JSON.stringify({ api: 'manuscript-order-v1' }), { status: 200 });
+    }
+    assert.equal(url, PRODUCTION_ORIGIN + '/api/login');
+    assert.equal(options?.method, 'POST');
+    assert.deepEqual(JSON.parse(options?.body as string), { email: 'fake@example.com', password: 'test-password-123' });
+    return new Response(JSON.stringify({ email: 'fake@example.com', csrf: 'synthetic-csrf' }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const client = new Api(PRODUCTION_ORIGIN, 'production');
+    assert.equal((await client.login('fake@example.com', 'test-password-123')).email, 'fake@example.com');
+    assert.equal(client.csrf, 'synthetic-csrf');
+    assert.equal(calls.length, 2);
+    calls.length = 0;
+    globalThis.fetch = (async () => { calls.push('marker'); return new Response(JSON.stringify({ api: 'wrong-server' }), { status: 200 }); }) as typeof fetch;
+    await assert.rejects(client.login('fake@example.com', 'test-password-123'), /로그인을 중단/);
+    assert.equal(calls.length, 1);
+  } finally { globalThis.fetch = old; }
 });
 test('recovery B survives editing and saving A; namespaces and corrupted drafts are isolated', async () => {
   const entries = new Map<string, string>();

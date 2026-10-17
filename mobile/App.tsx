@@ -3,7 +3,7 @@ import { Alert, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Press
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Api, Manuscript, serverAddress, User } from './src/api';
+import { Api, buildEndpoint, Manuscript, serverAddress, User } from './src/api';
 import { Draft, Editor } from './src/editor';
 import { draftStore } from './src/drafts';
 const modified = (seconds: number) => new Date(seconds * 1000).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
@@ -11,7 +11,9 @@ function Button({ label, onPress, disabled = false }: { label: string; onPress: 
   return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button, disabled && { opacity: .4 }]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
 }
 export default function App() {
-  const [address, setAddress] = useState(process.env.EXPO_PUBLIC_TEST_API_URL || '');
+  const endpoint = buildEndpoint();
+  const production = endpoint.mode === 'production';
+  const [address, setAddress] = useState(endpoint.origin);
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [user, setUser] = useState<User | null>(null); const api = useRef<Api | null>(null);
   const [docs, setDocs] = useState<Manuscript[]>([]); const [editor, setEditor] = useState<Editor | null>(null);
@@ -21,7 +23,7 @@ export default function App() {
   const [comparison, setComparison] = useState<{ a: Manuscript; b: Draft } | null>(null);
   const [font, setFont] = useState(12); const [active, setActive] = useState(true);
   const lock = useRef(false);
-  useEffect(() => { if (!process.env.EXPO_PUBLIC_TEST_API_URL) void AsyncStorage.getItem('yeobaek.mobile.server').then(v => { if (v) setAddress(v); }).catch(() => {}); }, []);
+  useEffect(() => { if (!production && !process.env.EXPO_PUBLIC_TEST_API_URL) void AsyncStorage.getItem('yeobaek.mobile.server').then(v => { if (v) setAddress(v); }).catch(() => {}); }, [production]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       setActive(state === 'active');
@@ -58,11 +60,11 @@ export default function App() {
   }
   function attach(value: Editor | null) { editorRef.current = value; setEditor(value); }
   async function login() {
-    const client = new Api(serverAddress(address));
+    const client = production ? new Api(endpoint.origin, 'production') : new Api(serverAddress(address));
     const signedIn = await client.login(email, password);
     const list = await client.request<Manuscript[]>('/manuscripts');
     api.current = client; setUser(signedIn); setDocs(list); setPassword('');
-    await AsyncStorage.setItem('yeobaek.mobile.server', client.origin);
+    if (!production) await AsyncStorage.setItem('yeobaek.mobile.server', client.origin);
   }
   async function open(id: string) {
     const doc = await api.current!.get(id);
@@ -108,20 +110,20 @@ export default function App() {
   }
   const stats = editor?.stats();
   return <SafeAreaProvider><SafeAreaView style={styles.safe}><StatusBar style="dark" /><KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <View style={styles.header}><Text style={styles.brand}>여백</Text><Text style={styles.muted}>아이폰 테스트 · 가짜 원고 전용</Text></View>
+    <View style={styles.header}><Text style={styles.brand}>소설여백</Text><Text style={styles.muted}>{production ? '아이폰 앱 · 운영 계정' : '아이폰 테스트 · 가짜 원고 전용'}</Text></View>
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {!user ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.login}>
       <Text style={styles.heading}>글을 이어 쓰는 작은 공간</Text>
-      <Text style={styles.muted}>테스트 웹과 같은 가짜 계정으로 로그인하세요.</Text>
-      <Text>테스트 서버 주소</Text><TextInput style={styles.input} accessibilityLabel="테스트 서버 주소" placeholder="http://192.168.0.10:8000" autoCapitalize="none" keyboardType="url" value={address} onChangeText={setAddress} />
+      <Text style={styles.muted}>{production ? '소설여백 웹과 같은 계정으로 로그인하세요.' : '테스트 웹과 같은 가짜 계정으로 로그인하세요.'}</Text>
+      {production ? <Text style={styles.muted}>운영 서버: {endpoint.origin}</Text> : <><Text>테스트 서버 주소</Text><TextInput style={styles.input} accessibilityLabel="테스트 서버 주소" placeholder="http://192.168.0.10:8000" autoCapitalize="none" keyboardType="url" value={address} onChangeText={setAddress} /></>}
       <Text>이메일</Text><TextInput style={styles.input} accessibilityLabel="이메일" autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={setEmail} />
       <Text>비밀번호</Text><TextInput style={styles.input} accessibilityLabel="비밀번호" secureTextEntry value={password} onChangeText={setPassword} />
       <Button label={busy ? '로그인 중…' : '로그인'} disabled={busy} onPress={() => void action(login)} />
-      <Text style={styles.muted}>테스트 계정: mobile-test@example.com / test-password-123. 실제 계정이나 원고를 입력하지 마세요.</Text>
+      {!production && <Text style={styles.muted}>테스트 계정: mobile-test@example.com / test-password-123. 실제 계정이나 원고를 입력하지 마세요.</Text>}
     </ScrollView> : !editor ? <View style={styles.container}>
       <Text style={styles.muted}>{user.email}</Text><Text style={styles.heading}>내 원고</Text>
       <View style={styles.row}><Button label="새 원고" disabled={busy} onPress={() => void action(async () => { const d = await api.current!.request<Manuscript>('/manuscripts', 'POST', {}); await refreshList(); await open(d.id); })} /><Button label="새로고침" disabled={busy} onPress={() => void action(refreshList)} /><Button label="로그아웃" disabled={busy} onPress={() => void action(logout)} /></View>
-      <FlatList data={docs} keyExtractor={d => d.id} ListEmptyComponent={<Text style={styles.muted}>새 원고로 가짜 글을 작성해 보세요.</Text>} renderItem={({ item }) => <Pressable disabled={busy} accessibilityRole="button" onPress={() => void action(() => open(item.id))} style={styles.doc}><Text style={styles.docTitle}>{item.title || '제목 없는 원고'}</Text><Text style={styles.muted}>{item.total.toLocaleString()}자 · 오늘 {item.today > 0 ? '+' : ''}{item.today}자</Text><Text style={styles.muted}>최근 수정 {modified(item.updated)}</Text></Pressable>} />
+      <FlatList data={docs} keyExtractor={d => d.id} ListEmptyComponent={<Text style={styles.muted}>{production ? '새 원고를 만들어 글을 시작하세요.' : '새 원고로 가짜 글을 작성해 보세요.'}</Text>} renderItem={({ item }) => <Pressable disabled={busy} accessibilityRole="button" onPress={() => void action(() => open(item.id))} style={styles.doc}><Text style={styles.docTitle}>{item.title || '제목 없는 원고'}</Text><Text style={styles.muted}>{item.total.toLocaleString()}자 · 오늘 {item.today > 0 ? '+' : ''}{item.today}자</Text><Text style={styles.muted}>최근 수정 {modified(item.updated)}</Text></Pressable>} />
     </View> : <View style={styles.container}>
       <View style={styles.row}><Button label="목록" disabled={busy || editor.busy} onPress={() => void action(list)} /><Button label="공유 / 글 보관" onPress={() => { void Share.share({ message: editor.title + '\n\n' + editor.body }).catch(() => setError('공유하지 못했습니다.')); }} /><Button label="기기 보관본" disabled={busy || editor.busy} onPress={() => void action(recovery)} /></View>
       <Text style={styles.muted}>{editor.message} · 최근 수정 {modified(editor.base.updated)}</Text>

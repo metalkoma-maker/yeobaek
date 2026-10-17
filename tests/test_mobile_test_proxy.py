@@ -130,3 +130,10 @@ class MobileTestProxyTest(unittest.TestCase):
         for value in ('http://synthetic-cloud-8000.app.github.dev', 'https://synthetic-cloud-8000.app.github.dev/path', 'https://example.test'):
             with self.assertRaises(ValueError):
                 SyntheticPublicOrigin(lambda environ, start: None, value)
+        with patch.dict(os.environ, {'YEOBAEK_MOBILE_PREVIEW': 'true',
+                                      'EXPO_PUBLIC_TEST_API_URL': 'https://synthetic-preview.trycloudflare.com'}):
+            self.assertEqual(configured_origin(), 'https://synthetic-preview.trycloudflare.com')
+            SyntheticPublicOrigin(lambda environ, start: None, configured_origin())
+            os.environ['EXPO_PUBLIC_TEST_API_URL'] = 'https://other.example.test'
+            with self.assertRaises(ValueError):
+                configured_origin()

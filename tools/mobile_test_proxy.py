@@ -1,4 +1,4 @@
-"""Fixed public origin for the synthetic Codespaces server ONLY.
+"""Fixed public origin for the synthetic test server ONLY.
 
 Do not install this middleware in the production Flask/Gunicorn service.
 Never trust caller-supplied forwarded headers or disable the existing CSRF guard.
@@ -9,6 +9,11 @@ from urllib.parse import urlsplit
 
 
 def configured_origin():
+    if os.environ.get('YEOBAEK_MOBILE_PREVIEW') == 'true':
+        origin = os.environ.get('EXPO_PUBLIC_TEST_API_URL', '')
+        if not re.fullmatch(r'https://[a-z0-9-]+\.trycloudflare\.com', origin):
+            raise ValueError('The temporary preview requires one fixed Cloudflare HTTPS origin')
+        return origin
     if os.environ.get('CODESPACES') != 'true':
         return None
     name = os.environ.get('CODESPACE_NAME', '')
@@ -23,8 +28,8 @@ def configured_origin():
 class SyntheticPublicOrigin:
     def __init__(self, app, origin):
         url = urlsplit(origin)
-        if not re.fullmatch(r'https://[a-z0-9-]+-8000\.app\.github\.dev', origin):
-            raise ValueError('Only a fixed Codespaces HTTPS origin is supported')
+        if not re.fullmatch(r'https://(?:[a-z0-9-]+-8000\.app\.github\.dev|[a-z0-9-]+\.trycloudflare\.com)', origin):
+            raise ValueError('Only a fixed synthetic HTTPS origin is supported')
         self.app, self.host, self.origin = app, url.hostname, origin
 
     def __call__(self, environ, start_response):

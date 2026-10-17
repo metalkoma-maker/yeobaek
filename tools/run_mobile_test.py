@@ -47,8 +47,8 @@ def main():
         def open_mobile():
             link = escape(os.environ.get('YEOBAEK_EXPO_LINK', ''), quote=True)
             return ('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
-                    '<h1>여백 아이폰 테스트</h1><p>가짜 원고 전용입니다.</p>'
-                    f'<p><a href="{link}">Expo Go에서 여백 열기</a></p>'
+                    '<h1>소설여백 아이폰 테스트</h1><p>가짜 원고 전용입니다.</p>'
+                    f'<p><a href="{link}">Expo Go에서 소설여백 열기</a></p>'
                     '<p><a href="/">같은 계정의 테스트 웹 열기</a></p>'
                     '<p>mobile-test@example.com / test-password-123</p>')
         module.app.config['TESTING'] = True
@@ -68,7 +68,8 @@ def main():
         print('Test runner: ' + TEST_RUNNER_VERSION)
         print('Account: mobile-test@example.com / test-password-123')
         print('A fresh temporary DB is used on every run; stopping removes test data.')
-        module.app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
+        listen_host = '127.0.0.1' if os.environ.get('YEOBAEK_MOBILE_PREVIEW') == 'true' else '0.0.0.0'
+        module.app.run(host=listen_host, port=8000, debug=False, use_reloader=False)
 
 
 if __name__ == '__main__':
