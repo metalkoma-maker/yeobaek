@@ -1,5 +1,8 @@
 name: 소설여백 아이폰 임시 검토 주소
 on:
+  push:
+    branches:
+      - 'mobile-preview/run-*'
   pull_request:
     paths:
       - 'mobile/**'
@@ -11,11 +14,11 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: mobile-preview-${{ github.event.pull_request.number }}
+  group: mobile-preview-${{ github.event.pull_request.number || 'manual' }}
   cancel-in-progress: true
 jobs:
   preview:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -80,7 +83,7 @@ jobs:
             exit 1
           fi
   report:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
