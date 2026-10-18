@@ -148,8 +148,8 @@ def main():
             print('MOBILE_EXPO_URL=' + expo_url, flush=True)
             print('EXPO_AUTH_CONFIGURED=' + ('true' if environment.get('EXPO_TOKEN') else 'false'), flush=True)
             print('MOBILE_PREVIEW_URL=' + api_url + '/_mobile/open', flush=True)
-            print('Synthetic data only; expires within 55 minutes.', flush=True)
-            deadline = time.monotonic() + 55 * 60
+            print('Synthetic data only; expires within 115 minutes.', flush=True)
+            deadline = time.monotonic() + 115 * 60
             while time.monotonic() < deadline:
                 if any(p.poll() is not None for p in processes):
                     raise RuntimeError('The temporary preview stopped early')
