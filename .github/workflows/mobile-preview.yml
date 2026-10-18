@@ -20,7 +20,7 @@ jobs:
   preview:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 125
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -78,7 +78,7 @@ jobs:
           preview_pid=$(cat "$RUNNER_TEMP/mobile-preview.pid")
           started=$SECONDS
           while kill -0 "$preview_pid" 2>/dev/null; do sleep 5; done
-          if (( SECONDS - started < 3200 )); then
+          if (( SECONDS - started < 6800 )); then
             tail -30 "$RUNNER_TEMP/mobile-preview.log"
             exit 1
           fi
