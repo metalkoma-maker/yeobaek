@@ -64,6 +64,15 @@ async function fixture(browser,loggedIn){
    await page.locator('#deletePassword').fill('new-password-123');await page.locator('#deleteConfirmation').fill('탈퇴');
    await page.evaluate(()=>localStorage.setItem('yeobaek.draft.v1:fake%40example.test:doc:tab','synthetic'));
    await page.locator('#deleteAccountSubmit').click();
+   await page.locator('#deleteWarningDialog').waitFor({state:'visible'});
+   assert.match(await page.locator('#deleteWarningText').textContent(),/계정과 모든 원고, 수정 이력, 복원 지점/);
+   assert.equal(state.calls.filter(x=>x.path==='/api/account/delete').length,0);
+   await page.locator('#deleteWarningCancel').click();
+   assert.equal(state.calls.filter(x=>x.path==='/api/account/delete').length,0);
+   assert.equal(await page.evaluate(()=>localStorage.getItem('yeobaek.draft.v1:fake%40example.test:doc:tab')),'synthetic');
+   await page.locator('#deleteAccountSubmit').click();
+   await page.locator('#deleteWarningDialog').waitFor({state:'visible'});
+   await page.locator('#deleteWarningConfirm').click();
    await page.waitForFunction(()=>!localStorage.getItem('yeobaek.draft.v1:fake%40example.test:doc:tab'));
    assert.equal(state.calls.at(-1).path,'/api/account/delete');
    assert.equal(state.calls.at(-1).csrf,'new-csrf');

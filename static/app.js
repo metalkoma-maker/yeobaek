@@ -412,12 +412,26 @@ $('changePasswordForm').onsubmit=async e=>{
  }catch(error){$('changePasswordMessage').textContent=error.message;}
  finally{button.disabled=false;}
 };
+let deleteBusy=false;
 $('deleteAccountForm').onsubmit=async e=>{
- e.preventDefault();if(saving||dirty&&!await save()){$('deleteAccountMessage').textContent='원고가 아직 저장되지 않았습니다. 저장 상태를 확인해 주세요.';return;}
- const button=$('deleteAccountSubmit');button.disabled=true;
+ e.preventDefault();
+ if(deleteBusy||saving||dirty&&!await save()){
+  $('deleteAccountMessage').textContent='원고가 아직 저장되지 않았습니다. 저장 상태를 확인해 주세요.';
+  return;
+ }
+ $('deleteAccountMessage').textContent='';$('deleteWarningDialog').showModal();
+};
+$('deleteWarningCancel').onclick=()=>$('deleteWarningDialog').close();
+$('deleteWarningDialog').addEventListener('cancel',e=>{if(deleteBusy)e.preventDefault();});
+$('deleteWarningConfirm').onclick=async()=>{
+ if(deleteBusy)return;
+ deleteBusy=true;$('deleteWarningConfirm').disabled=true;$('deleteWarningCancel').disabled=true;
+ let deleted=false;
  try{
   await api('/account/delete','POST',{password:$('deletePassword').value,confirmation:$('deleteConfirmation').value});
+  deleted=true;
   try{YeobaekDrafts.clearAccount(draftEmail);}catch{}
   location.assign('/');
- }catch(error){$('deleteAccountMessage').textContent=error.message;button.disabled=false;}
+ }catch(error){$('deleteWarningDialog').close();$('deleteAccountMessage').textContent=error.message;}
+ finally{if(!deleted){deleteBusy=false;$('deleteWarningConfirm').disabled=false;$('deleteWarningCancel').disabled=false;}}
 };
