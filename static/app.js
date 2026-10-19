@@ -186,13 +186,13 @@ function downloadedAt(date){
 function download(){if(!current)return;const stamp='내려받은 시각: '+downloadedAt(new Date());const blob=new Blob([stamp+'\n\n'+$('title').value+'\n\n'+$('body').value],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=($('title').value||'원고').replace(/[\\/:*?"<>|]/g,'_')+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 async function newDoc(){if(saving)return;if(dirty&&!await save())return;try{const d=await api('/manuscripts','POST',{});orderEpoch++;docs.unshift(d);if(dirty||saving){list();return;}render(d,true);$('title').focus();}catch(e){notice(e.message);}}
 function suggestedCopyTitle(source){
- const base=(source.title.trim()||'제목 없는 원고').replace(/ · [2-9][0-9]*교$/u,'');
+ const base=(source.title.trim()||'제목 없는 원고').replace(/ · [2-9][0-9]*[고교]$/u,'');
  let number=1;
  for(const doc of docs){
-  const title=doc.title,match=/ · ([2-9][0-9]*)교$/u.exec(title);
+  const title=doc.title,match=/ · ([2-9][0-9]*)[고교]$/u.exec(title);
   if(match&&title.slice(0,match.index)===base.slice(0,200-match[0].length))number=Math.max(number,Number(match[1]));
  }
- const suffix=' · '+Math.max(2,number+1)+'교';return base.slice(0,200-suffix.length)+suffix;
+ const suffix=' · '+Math.max(2,number+1)+'고';return base.slice(0,200-suffix.length)+suffix;
 }
 let copySource=null,copyBusy=false;
 async function openCopyDialog(id){

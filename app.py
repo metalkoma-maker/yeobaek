@@ -335,14 +335,14 @@ def save_manuscript(mid, old, title, body, now, keep_before_restore=False):
     db().execute('INSERT INTO daily VALUES(?,?,?) ON CONFLICT(manuscript_id,day) DO UPDATE SET delta=delta+excluded.delta',(mid,day(),delta))
 
 def next_copy_title(title, user_id):
-    base=re.sub(r' · [2-9][0-9]*교$', '', title.strip() or '제목 없는 원고')
+    base=re.sub(r' · [2-9][0-9]*[고교]$', '', title.strip() or '제목 없는 원고')
     titles=[row[0] for row in db().execute('SELECT title FROM manuscripts WHERE user_id=?',(user_id,))]
     number=1
     for existing in titles:
-        match=re.search(r' · ([2-9][0-9]*)교$',existing)
+        match=re.search(r' · ([2-9][0-9]*)[고교]$',existing)
         if match and existing[:match.start()]==base[:200-len(match.group(0))]:
             number=max(number,int(match[1]))
-    suffix=f' · {max(2,number+1)}교'
+    suffix=f' · {max(2,number+1)}고'
     return base[:200-len(suffix)]+suffix
 
 def manuscript_list_state():

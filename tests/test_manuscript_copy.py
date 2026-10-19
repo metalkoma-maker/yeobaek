@@ -17,16 +17,16 @@ class ManuscriptCopyTest(unittest.TestCase):
         saved=client.put(path,json={'title':'달빛','body':'첫 문장\n다음 문장','version':0},headers=headers).json
         second=client.post(path+'/copy',json={'version':saved['version']},headers=headers)
         self.assertEqual(second.status_code,201)
-        self.assertEqual(second.json['title'],'달빛 · 2교')
+        self.assertEqual(second.json['title'],'달빛 · 2고')
         self.assertEqual(second.json['body'],saved['body'])
         self.assertEqual(second.json['version'],0)
         self.assertEqual(second.json['total'],saved['total'])
         self.assertEqual(second.json['today'],0)
         self.assertEqual(client.get('/api/manuscripts/'+second.json['id']+'/history').json,[])
         third=client.post(path+'/copy',json={'version':saved['version']},headers=headers)
-        self.assertEqual(third.json['title'],'달빛 · 3교')
+        self.assertEqual(third.json['title'],'달빛 · 3고')
         fourth=client.post('/api/manuscripts/'+third.json['id']+'/copy',json={'version':0},headers=headers)
-        self.assertEqual(fourth.json['title'],'달빛 · 4교')
+        self.assertEqual(fourth.json['title'],'달빛 · 4고')
         self.assertEqual(client.get(path).json,saved)
         other_device=module.app.test_client()
         other_device.post('/api/login',json={'email':'copy-rounds@example.com','password':'test-password-123'})
@@ -61,8 +61,18 @@ class ManuscriptCopyTest(unittest.TestCase):
         path='/api/manuscripts/'+source['id']+'/copy'
         second=client.post(path,json={'version':1},headers=headers).json
         third=client.post(path,json={'version':1},headers=headers).json
-        self.assertEqual(second['title'],title[:195]+' · 2교')
-        self.assertEqual(third['title'],title[:195]+' · 3교')
+        self.assertEqual(second['title'],title[:195]+' · 2고')
+        self.assertEqual(third['title'],title[:195]+' · 3고')
+
+    def test_legacy_gyo_title_continues_with_go_number(self):
+        client,headers=self.account('copy-legacy-title')
+        source=client.post('/api/manuscripts',json={},headers=headers).json
+        saved=client.put('/api/manuscripts/'+source['id'],json={
+            'version':0,'title':'달빛 · 2교','body':'기존 원고'},headers=headers).json
+        copied=client.post('/api/manuscripts/'+source['id']+'/copy',json={
+            'version':saved['version']},headers=headers)
+        self.assertEqual(copied.status_code,201)
+        self.assertEqual(copied.json['title'],'달빛 · 3고')
 
 
 if __name__=='__main__': unittest.main()

@@ -92,7 +92,8 @@ async function dragBefore(page,from,to){
    await page.locator('#body').fill('저장 후 복사할 글');
    await page.locator('[data-id="a"] + .documentMore').click();
    await page.locator('#copyDialog').waitFor({state:'visible'});
-   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 2교');
+   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 2고');
+   assert.doesNotMatch(await page.locator('#copyDialog').innerText(),/3교를 시작할 때/);
    await page.locator('#copyConfirm').click();
    await page.waitForFunction(()=>current.id==='copy-3');
    await page.waitForFunction(()=>!copyBusy&&!document.querySelector('#copyDialog').open);
@@ -102,7 +103,7 @@ async function dragBefore(page,from,to){
    assert.equal((await ids(page))[0],'copy-3');
    await page.locator('[data-id="a"] + .documentMore').click();
    await page.locator('#copyDialog').waitFor({state:'visible'});
-   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 3교');
+   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 3고');
    await page.locator('#copyConfirm').click();
    await page.waitForFunction(()=>current.id==='copy-4');
    await page.waitForFunction(()=>!copyBusy&&!document.querySelector('#copyDialog').open);
@@ -112,7 +113,15 @@ async function dragBefore(page,from,to){
    await page.locator('#copyConfirm').click();
    await page.waitForFunction(()=>document.querySelector('#copyMessage').textContent.includes('다른 기기'));
    assert.equal(state.docs.length,before);await page.locator('#copyCancel').click();
-   assert.deepEqual(errors,[]);console.log('PASS: saving as 2교/3교 preserves source and blocks stale copies');await context.close();
+   assert.deepEqual(errors,[]);console.log('PASS: saving as 2고/3고 preserves source and blocks stale copies');await context.close();
+  }
+  {
+   const state=seed();state.docs.find(d=>d.id==='a').title='가짜 원고 a · 2교';
+   const {context,page,errors}=await fixture(browser,state);
+   await page.locator('[data-id="a"] + .documentMore').click();
+   await page.locator('#copyDialog').waitFor({state:'visible'});
+   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 3고');
+   assert.deepEqual(errors,[]);await context.close();
   }
   {
    const state=seed(),longTitle='가'.repeat(200);
@@ -121,7 +130,7 @@ async function dragBefore(page,from,to){
    for(const round of [2,3]){
     await page.locator('[data-id="a"] + .documentMore').click();
     await page.locator('#copyDialog').waitFor({state:'visible'});
-    assert.equal(await page.inputValue('#copyTitle'),longTitle.slice(0,195)+' · '+round+'교');
+    assert.equal(await page.inputValue('#copyTitle'),longTitle.slice(0,195)+' · '+round+'고');
     await page.locator('#copyConfirm').click();
     await page.waitForFunction(expected=>docs.length===expected,round+2);
     await page.waitForFunction(()=>!copyBusy&&!document.querySelector('#copyDialog').open);
