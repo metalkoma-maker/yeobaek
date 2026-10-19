@@ -93,6 +93,24 @@ async function performanceCheck(browser,preUndo){
    await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');
    console.log('PASS: dated history preview, manual pin, atomic restore, and clean editing baseline');await context.close();
   }
+  {
+   const {page,context,state}=await fixture(browser);
+   await page.locator('#body').fill('가 나\n다😀');
+   await page.waitForFunction(()=>document.querySelector('#total').textContent==='5');
+   assert.match(await page.locator('#countRule').textContent(),/띄어쓰기 포함 · 줄바꿈 제외/);
+   await saved(page);assert.equal(state.doc.total,5);
+   console.log('PASS: visible and saved character totals include spaces but exclude line breaks');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   state.doc.today_count_rule='without_spaces';
+   await page.evaluate(doc=>render(doc),state.doc);
+   await page.locator('#body').fill('가 나\n다😀');
+   await page.waitForFunction(()=>document.querySelector('#total').textContent==='5');
+   assert.equal(await page.locator('#today').textContent(),'+4');
+   assert.match(await page.locator('#countRule').textContent(),/오늘: 공백 제외 \(내일부터 통일\)/);
+   console.log('PASS: existing daily counter keeps its original units during the switch day');await context.close();
+  }
   for(const viewport of [{width:1280,height:800},{width:390,height:844}]){
    const {page,context}=await fixture(browser,false,{viewport});
    await page.evaluate(()=>render({...current,body:'가짜 줄\n'.repeat(150),total:450}));

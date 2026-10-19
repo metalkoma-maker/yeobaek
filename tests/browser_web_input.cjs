@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const email = 'browser-test@example.com';
 const fakeBody = '가나다라마'.repeat(300); // 1,500 synthetic Korean code points.
-const count = body => Array.from(body.replace(/\s/gu, '')).length;
+const count = body => Array.from(body.replace(/[\r\n\u2028\u2029]/gu, '')).length;
 const copy = value => JSON.parse(JSON.stringify(value));
 const seed = () => ({ id: 'synthetic', title: '가짜 테스트', body: fakeBody, version: 1, updated: 1, total: 1500, today: 1500, day: '2099-01-01' });
 const instrument = () => {

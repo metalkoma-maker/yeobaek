@@ -97,10 +97,12 @@ class HistoryCheckpointTest(unittest.TestCase):
                 CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT NOT NULL,password TEXT NOT NULL);
                 CREATE TABLE manuscripts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 0,updated INTEGER NOT NULL);
                 CREATE TABLE manuscript_history(manuscript_id TEXT NOT NULL,version INTEGER NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(manuscript_id,version));
+                CREATE TABLE daily(manuscript_id TEXT NOT NULL,day TEXT NOT NULL,delta INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(manuscript_id,day));
                 INSERT INTO users VALUES('u','fake@example.com','fake');
                 INSERT INTO manuscripts VALUES('m','u','현재','현재 글',2,300);
                 INSERT INTO manuscript_history VALUES('m',1,'옛 제목','옛 글',200);
             ''')
+            connection.execute('INSERT INTO daily VALUES(?,?,?)',('m',module.day(),7))
             connection.commit()
             connection.close()
             old_path = module.DB
@@ -108,12 +110,20 @@ class HistoryCheckpointTest(unittest.TestCase):
                 module.DB = path
                 module.init()
                 module.init()
+                with module.app.app_context():
+                    self.assertTrue(module.legacy_count_day())
                 with sqlite3.connect(path) as connection:
                     point = connection.execute("SELECT kind,label,body FROM manuscript_checkpoints WHERE manuscript_id='m'").fetchall()
                     original = connection.execute("SELECT body FROM manuscript_history WHERE manuscript_id='m'").fetchall()
                     self.assertEqual(point, [('legacy', '기존 수정 이력', '옛 글')])
                     self.assertEqual(original, [('옛 글',)])
-                    self.assertEqual(connection.execute('SELECT COUNT(*) FROM schema_migrations').fetchone()[0], 1)
+                    self.assertEqual(connection.execute('SELECT COUNT(*) FROM schema_migrations').fetchone()[0], 2)
+                    self.assertEqual(connection.execute('SELECT delta FROM daily').fetchone()[0], 7)
+                with module.app.app_context():
+                    current=module.db().execute("SELECT * FROM manuscripts WHERE id='m'").fetchone()
+                    module.save_manuscript('m',current,'현재','현재 글 한 칸',int(module.time.time()))
+                    module.db().commit()
+                    self.assertEqual(module.db().execute("SELECT delta FROM daily WHERE manuscript_id='m'").fetchone()[0],9)
             finally:
                 module.DB = old_path
 

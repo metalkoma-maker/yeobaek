@@ -5,15 +5,19 @@ const modifiedFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year
 function modifiedDate(value){const date=new Date(Number(value)*1000);return value!=null&&Number.isFinite(date.getTime())?'최근 수정 '+modifiedFormat.format(date):'최근 수정일 없음';}
 function showEditor(){ $('workspace').classList.remove('view-list');$('sidebar').classList.remove('open'); }
 async function showList(){if(dirty&&!await save())return;$('workspace').classList.add('view-list');$('sidebar').classList.remove('open');$('closeList').hidden=!current;try{await refreshDocuments();}catch(e){showEditor();notice(e.message);}}
-const count=s=>Array.from(s.replace(/\s/gu,'')).length;
+const count=s=>Array.from(s.replace(/[\r\n\u2028\u2029]/gu,'')).length;
+const countWithoutSpaces=s=>Array.from(s.replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/gu,'')).length;
 async function api(path,method='GET',data){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data)});const value=await r.json();if(!r.ok){const e=Error(value.error||'요청에 실패했습니다.');e.status=r.status;e.value=value;throw e;}return value;}
 let statsFrame=null;
 function textIfChanged(id,value){const node=$(id);if(node.textContent!==value)node.textContent=value;}
 function stats(){
  if(statsFrame!==null){cancelAnimationFrame(statsFrame);statsFrame=null;}
  if(!current)return;
- const total=count($('body').value),n=current.today+total-current.total;
+ const total=count($('body').value);
+ const oldRule=current.today_count_rule==='without_spaces';
+ const n=current.today+(oldRule?countWithoutSpaces($('body').value)-countWithoutSpaces(current.body):total-current.total);
  textIfChanged('total',total.toLocaleString());textIfChanged('today',(n>0?'+':'')+n.toLocaleString());
+ textIfChanged('countRule',oldRule?'전체: 공백 포함 · 오늘: 공백 제외 (내일부터 통일)':'띄어쓰기 포함 · 줄바꿈 제외 · 한국시간 기준');
 }
 // Multiple input events before a paint need only one latest-value count.
 function scheduleStats(){if(statsFrame===null)statsFrame=requestAnimationFrame(()=>{statsFrame=null;stats();});}

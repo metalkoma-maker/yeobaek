@@ -44,10 +44,23 @@ def init():
             db().execute('''INSERT OR IGNORE INTO manuscript_checkpoints(manuscript_id,version,title,body,updated,created,kind,label)
                 SELECT manuscript_id,version,title,body,updated,updated,'legacy','기존 수정 이력' FROM manuscript_history''')
             db().execute("INSERT INTO schema_migrations VALUES('history_checkpoints_v1',?)",(int(time.time()),))
+        if not db().execute("SELECT 1 FROM schema_migrations WHERE name='count_spaces_v1'").fetchone():
+            today=datetime.now(SEOUL).date()
+            # Finish an already-started writing day with its original units.
+            # A new database or a day without saved changes switches immediately.
+            had_daily=db().execute('SELECT 1 FROM daily WHERE day=? LIMIT 1',(today.isoformat(),)).fetchone()
+            effective=today+timedelta(days=1) if had_daily else today
+            midnight=datetime(effective.year,effective.month,effective.day,tzinfo=SEOUL)
+            db().execute("INSERT INTO schema_migrations VALUES('count_spaces_v1',?)",(int(midnight.timestamp()),))
         db().commit()
 
 def day(): return datetime.now(SEOUL).date().isoformat()
-def count(text): return len(re.sub(r'\s', '', text))
+def count(text): return len(re.sub(r'[\r\n\u2028\u2029]', '', text))
+def count_without_spaces(text): return len(re.sub(r'\s', '', text))
+def legacy_count_day():
+    effective=db().execute("SELECT applied FROM schema_migrations WHERE name='count_spaces_v1'").fetchone()[0]
+    return int(time.time())<effective
+COUNT_BODY_SQL = "length(replace(replace(replace(replace(body,char(13),''),char(10),''),char(8232),''),char(8233),''))"
 def digest(password, salt): return hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex()
 def fail(msg, code=400): return jsonify(error=msg), code
 
@@ -141,7 +154,8 @@ def owned(mid): return db().execute('SELECT * FROM manuscripts WHERE id=? AND us
 def pack(row):
     data=dict(row); data.pop('user_id',None)
     delta=db().execute('SELECT delta FROM daily WHERE manuscript_id=? AND day=?',(data['id'],day())).fetchone()
-    data.update(total=count(data['body']),today=delta[0] if delta else 0,day=day())
+    data.update(total=count(data['body']),today=delta[0] if delta else 0,day=day(),
+                today_count_rule='without_spaces' if legacy_count_day() else 'with_spaces')
     return data
 
 def checkpoint(mid, row, kind, now, label=''):
@@ -180,7 +194,8 @@ def save_manuscript(mid, old, title, body, now, keep_before_restore=False):
     else: automatic_checkpoint(mid,old,now)
     db().execute('INSERT OR IGNORE INTO manuscript_history VALUES(?,?,?,?,?)',(mid,old['version'],old['title'],old['body'],old['updated']))
     db().execute('DELETE FROM manuscript_history WHERE manuscript_id=? AND version NOT IN (SELECT version FROM manuscript_history WHERE manuscript_id=? ORDER BY version DESC LIMIT 50)',(mid,mid))
-    delta=count(body)-count(old['body'])
+    daily_counter=count_without_spaces if legacy_count_day() else count
+    delta=daily_counter(body)-daily_counter(old['body'])
     db().execute('UPDATE manuscripts SET title=?,body=?,version=version+1,updated=? WHERE id=?',(title,body,now,mid))
     db().execute('INSERT INTO daily VALUES(?,?,?) ON CONFLICT(manuscript_id,day) DO UPDATE SET delta=delta+excluded.delta',(mid,day(),delta))
 
@@ -245,7 +260,7 @@ def manuscript(mid):
 @app.get('/api/manuscripts/<mid>/history')
 def history(mid):
     if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
-    rows=db().execute('SELECT version,title,updated,length(body) AS characters FROM manuscript_history WHERE manuscript_id=? ORDER BY version DESC LIMIT 50',(mid,)).fetchall()
+    rows=db().execute(f'SELECT version,title,updated,{COUNT_BODY_SQL} AS characters FROM manuscript_history WHERE manuscript_id=? ORDER BY version DESC LIMIT 50',(mid,)).fetchall()
     return jsonify([dict(x) for x in rows])
 
 @app.get('/api/manuscripts/<mid>/history/<int:version>')
@@ -258,7 +273,7 @@ def history_item(mid,version):
 def checkpoints(mid):
     if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
     if request.method=='GET':
-        rows=db().execute('SELECT version,title,updated,created,kind,label,length(body) AS characters FROM manuscript_checkpoints WHERE manuscript_id=? ORDER BY updated DESC,version DESC',(mid,)).fetchall()
+        rows=db().execute(f'SELECT version,title,updated,created,kind,label,{COUNT_BODY_SQL} AS characters FROM manuscript_checkpoints WHERE manuscript_id=? ORDER BY updated DESC,version DESC',(mid,)).fetchall()
         return jsonify([dict(row) for row in rows])
     data=request.get_json() or {}
     version=data.get('version'); label=data.get('label','중요한 버전'); expected=data.get('expected_current_version')
