@@ -1,4 +1,4 @@
-export type Manuscript = { id: string; title: string; body: string; version: number; updated: number; total: number; today: number; day: string };
+export type Manuscript = { id: string; title: string; body: string; version: number; updated: number; total: number; today: number; day: string; today_count_rule?: 'with_spaces' | 'without_spaces' };
 export type User = { email: string; csrf: string };
 export class ApiError extends Error {
   constructor(message: string, public status: number, public current?: Manuscript) { super(message); }

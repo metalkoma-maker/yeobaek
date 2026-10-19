@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Editor, Draft, count, koreaDay } from '../src/editor';
+import { Editor, Draft, count, countWithoutSpaces, koreaDay } from '../src/editor';
 import { Api, ApiError, buildEndpoint, Manuscript, PRODUCTION_ORIGIN, serverAddress } from '../src/api';
 import { createDraftStore } from '../src/draftStorage';
 const doc = (): Manuscript => ({ id: 'fake', title: '가짜 원고', body: '가', version: 1, total: 1, today: 1, day: koreaDay(), updated: 1 });
@@ -9,11 +9,15 @@ function storage() {
   return { put: async (draft: Draft) => { local = { ...draft }; }, clear: async (draft: Draft) => { if (local?.body === draft.body && local?.title === draft.title) local = null; }, read: () => local };
 }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
-test('Python-compatible whitespace and Unicode counts; Korea day rollover', () => {
-  assert.equal(count('가 나\n다😀\u0085\u001c'), 4);
+test('spaces count, line breaks do not; legacy today stays in its original units', () => {
+  assert.equal(count('가 나\n다😀'), 5);
+  assert.equal(count('가 나\n다😀\u0085\u001c'), 7);
+  assert.equal(countWithoutSpaces('가 나\n다😀\u0085\u001c'), 4);
   assert.equal(count('\ufeff'), 1);
   const e = new Editor({ ...doc(), day: '2000-01-01', today: 80 }, storage(), async d => d, () => {});
   e.edit('가짜', '가나다'); assert.deepEqual(e.stats(), { total: 3, today: 2 });
+  const legacy = new Editor({ ...doc(), body: '가 나', total: 3, today: 2, today_count_rule: 'without_spaces' }, storage(), async d => d, () => {});
+  legacy.edit('가짜', '가 나 다'); assert.deepEqual(legacy.stats(), { total: 5, today: 3 });
 });
 test('failed save retains input and durable draft; retry keeps original version', async () => {
   const store = storage(); let attempts = 0;

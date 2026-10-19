@@ -1,8 +1,9 @@
 import { ApiError, Manuscript } from './api';
 export type Draft = { id: string; title: string; body: string; version: number; time: number };
 export type DraftStore = { put(draft: Draft): Promise<void>; clear(draft: Draft): Promise<void> };
-// Python re \s includes these control characters; JS \s additionally includes BOM.
-export const count = (text: string) => Array.from(text.replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/gu, '')).length;
+export const count = (text: string) => Array.from(text.replace(/[\r\n\u2028\u2029]/gu, '')).length;
+// Used only on an existing server's count-change day to preserve today's units.
+export const countWithoutSpaces = (text: string) => Array.from(text.replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/gu, '')).length;
 export const koreaDay = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 export class Editor {
   base: Manuscript;
@@ -40,7 +41,9 @@ export class Editor {
   }
   stats() {
     const total = count(this.body);
-    return { total, today: (this.base.day === koreaDay() ? this.base.today : 0) + total - this.base.total };
+    const legacy = this.base.today_count_rule === 'without_spaces';
+    const change = legacy ? countWithoutSpaces(this.body) - countWithoutSpaces(this.base.body) : total - this.base.total;
+    return { total, today: (this.base.day === koreaDay() ? this.base.today : 0) + change };
   }
   async preserve() { await this.enqueue(() => this.store.put(this.draft())); }
   async save(manual = false): Promise<boolean> {
