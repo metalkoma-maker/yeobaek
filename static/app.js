@@ -115,7 +115,7 @@ async function storeOrder(ids){
  orderBusy=true;orderEpoch++;docs=arrangeDocs(docs,ids);list();orderStatus('원고 순서 저장 중…');
  try{
   const result=await api('/manuscript-order','PUT',{ids,version});
-  docs=arrangeDocs(docs,result.ids);orderVersion=result.version;orderStatus('원고 순서를 저장했습니다.');
+  docs=arrangeDocs(docs,result.ids);orderVersion=result.version;orderStatus('');
  }catch(e){
   docs=arrangeDocs(docs,previous);
   if(e.status===409){
