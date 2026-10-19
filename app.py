@@ -199,6 +199,17 @@ def save_manuscript(mid, old, title, body, now, keep_before_restore=False):
     db().execute('UPDATE manuscripts SET title=?,body=?,version=version+1,updated=? WHERE id=?',(title,body,now,mid))
     db().execute('INSERT INTO daily VALUES(?,?,?) ON CONFLICT(manuscript_id,day) DO UPDATE SET delta=delta+excluded.delta',(mid,day(),delta))
 
+def next_copy_title(title, user_id):
+    base=re.sub(r' · [2-9][0-9]*교$', '', title.strip() or '제목 없는 원고')
+    titles=[row[0] for row in db().execute('SELECT title FROM manuscripts WHERE user_id=?',(user_id,))]
+    number=1
+    for existing in titles:
+        match=re.search(r' · ([2-9][0-9]*)교$',existing)
+        if match and existing[:match.start()]==base[:200-len(match.group(0))]:
+            number=max(number,int(match[1]))
+    suffix=f' · {max(2,number+1)}교'
+    return base[:200-len(suffix)]+suffix
+
 def manuscript_list_state():
     rows=db().execute('SELECT * FROM manuscripts WHERE user_id=? ORDER BY updated DESC,rowid DESC',(g.user['user_id'],)).fetchall()
     saved=db().execute('SELECT ids,version FROM manuscript_order WHERE user_id=?',(g.user['user_id'],)).fetchone()
@@ -255,6 +266,26 @@ def manuscript(mid):
         result=pack(row); db().rollback(); return jsonify(result)
     save_manuscript(mid,row,title,body,int(time.time()))
     db().commit(); return jsonify(pack(owned(mid)))
+
+@app.post('/api/manuscripts/<mid>/copy')
+def copy_manuscript(mid):
+    data=request.get_json() or {}
+    version=data.get('version'); title=data.get('title')
+    if (type(version) is not int or version<0 or
+            (title is not None and (not isinstance(title,str) or not 1<=len(title.strip())<=200))):
+        return fail('사본 제목과 원고 버전을 확인해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    source=owned(mid)
+    if not source: db().rollback(); return fail('원고를 찾을 수 없습니다.',404)
+    if source['version']!=version:
+        result=pack(source); db().rollback()
+        return jsonify(error='다른 기기에서 원고가 수정됐습니다. 다시 확인해 주세요.',current=result),409
+    name=title.strip() if title is not None else next_copy_title(source['title'],g.user['user_id'])
+    new_id=secrets.token_hex(16)
+    db().execute('INSERT INTO manuscripts(id,user_id,title,body,version,updated) VALUES(?,?,?,?,0,?)',
+                 (new_id,g.user['user_id'],name,source['body'],int(time.time())))
+    db().commit()
+    return jsonify(pack(owned(new_id))),201
 
 
 @app.get('/api/manuscripts/<mid>/history')

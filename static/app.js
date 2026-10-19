@@ -132,7 +132,8 @@ function list(){
  if(draggedId)return; // Do not replace the native drag source during autosave.
  $('documents').replaceChildren();
  for(const d of docs){
-  const b=document.createElement('button');b.dataset.id=d.id;b.className=current?.id===d.id?'active':'';
+  const row=document.createElement('div');row.className='documentRow';
+  const b=document.createElement('button');b.dataset.id=d.id;b.className='documentCard'+(current?.id===d.id?' active':'');
   b.draggable=!orderBusy&&orderVersion!==null;b.title='드래그하여 순서 변경 · Alt+↑/↓';
   const handle=document.createElement('span');handle.className='orderHandle';handle.textContent='⠿';handle.setAttribute('aria-hidden','true');
   const t=document.createElement('b');t.textContent=d.title||'제목 없는 원고';
@@ -148,9 +149,13 @@ function list(){
    if(!e.altKey||!['ArrowUp','ArrowDown'].includes(e.key)||orderBusy||orderVersion===null)return;
    const index=docs.findIndex(x=>x.id===d.id),target=docs[index+(e.key==='ArrowUp'?-1:1)];if(!target)return;
    e.preventDefault();await moveDocument(d.id,target.id,e.key==='ArrowDown');
-   [...$('documents').children].find(node=>node.dataset.id===d.id)?.focus();
+   [...$('documents').children].find(node=>node.querySelector('.documentCard')?.dataset.id===d.id)?.querySelector('.documentCard')?.focus();
   });
-  $('documents').append(b);
+  const more=document.createElement('button');more.type='button';more.className='documentMore';more.textContent='⋯';
+  more.setAttribute('aria-label',(d.title||'제목 없는 원고')+'을 다른 이름으로 저장');
+  more.title='다른 이름으로 저장';
+  more.onclick=()=>void openCopyDialog(d.id);
+  row.append(b,more);$('documents').append(row);
  }
 }
 function render(d,navigate=false){recoveryReview=false;$('retry').textContent='다시 저장';$('historyButton').disabled=false;current=d;dirty=false;conflict=null;if($('title').value!==d.title)$('title').value=d.title;if($('body').value!==d.body)$('body').value=d.body;$('empty').hidden=true;$('editor').hidden=false;$('download').disabled=false;$('notice').hidden=true;$('saveStatus').textContent='저장됨';stats();list();$('closeList').hidden=false;if(navigate)showEditor();syncEditingHistory(d.id);}
@@ -169,7 +174,7 @@ for(const id of ['title','body']){
  node.addEventListener('compositionend',()=>{composing=false;if(editHistory)editHistory.endComposition(editingState(id));historyButtons();edit();});
 }
 document.addEventListener('keydown',e=>{
- if(!current||!editHistory||$('workspace').hidden||$('safetyDialog').open||$('historyDialog').open||composing||e.isComposing||e.keyCode===229||e.altKey||!(e.ctrlKey||e.metaKey))return;
+ if(!current||!editHistory||$('workspace').hidden||$('safetyDialog').open||$('historyDialog').open||$('copyDialog').open||composing||e.isComposing||e.keyCode===229||e.altKey||!(e.ctrlKey||e.metaKey))return;
  if(e.target.matches('input,textarea')&&!['title','body'].includes(e.target.id))return;
  const key=e.key.toLowerCase();if(key==='z'||(key==='y'&&!e.shiftKey)){e.preventDefault();undoEditing(key==='y'||e.shiftKey);}
 });
@@ -180,6 +185,41 @@ function downloadedAt(date){
 }
 function download(){if(!current)return;const stamp='내려받은 시각: '+downloadedAt(new Date());const blob=new Blob([stamp+'\n\n'+$('title').value+'\n\n'+$('body').value],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=($('title').value||'원고').replace(/[\\/:*?"<>|]/g,'_')+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 async function newDoc(){if(saving)return;if(dirty&&!await save())return;try{const d=await api('/manuscripts','POST',{});orderEpoch++;docs.unshift(d);if(dirty||saving){list();return;}render(d,true);$('title').focus();}catch(e){notice(e.message);}}
+function suggestedCopyTitle(source){
+ const base=(source.title.trim()||'제목 없는 원고').replace(/ · [2-9][0-9]*교$/u,'');
+ let number=1;
+ for(const doc of docs){
+  const title=doc.title,match=/ · ([2-9][0-9]*)교$/u.exec(title);
+  if(match&&title.slice(0,match.index)===base.slice(0,200-match[0].length))number=Math.max(number,Number(match[1]));
+ }
+ const suffix=' · '+Math.max(2,number+1)+'교';return base.slice(0,200-suffix.length)+suffix;
+}
+let copySource=null,copyBusy=false;
+async function openCopyDialog(id){
+ if(copyBusy||saving||orderBusy||draggedId||$('copyDialog').open)return;
+ if(dirty&&!await save())return;
+ try{
+  const source=await api('/manuscripts/'+id);
+  if(dirty||saving)return;
+  copySource=source;$('copyTitle').value=suggestedCopyTitle(source);$('copyMessage').textContent='원본은 그대로 남고 사본은 별도 원고가 됩니다.';
+  $('copyDialog').showModal();$('copyTitle').focus();$('copyTitle').select();
+ }catch(e){notice(e.message);}
+}
+$('copyCancel').onclick=()=>{if(!copyBusy)$('copyDialog').close();};
+$('copyDialog').addEventListener('cancel',e=>{if(copyBusy)e.preventDefault();});
+$('copyDialog').addEventListener('close',()=>{copySource=null;});
+$('copyConfirm').onclick=async()=>{
+ if(copyBusy||!copySource)return;
+ const title=$('copyTitle').value.trim();if(!title){$('copyMessage').textContent='새 원고 제목을 입력해 주세요.';return;}
+ copyBusy=true;$('copyConfirm').disabled=true;$('copyCancel').disabled=true;
+ try{
+  const created=await api('/manuscripts/'+copySource.id+'/copy','POST',{version:copySource.version,title});
+  orderEpoch++;
+  try{acceptListState(await fetchListState());}catch{docs.unshift(created);list();}
+  render(created,true);$('copyDialog').close();$('title').focus();
+ }catch(e){$('copyMessage').textContent=e.status===409?'다른 기기에서 원고가 수정됐습니다. 창을 닫고 다시 확인해 주세요.':e.message;}
+ finally{copyBusy=false;$('copyConfirm').disabled=false;$('copyCancel').disabled=false;}
+};
 async function enter(user){draftEmail=user.email;refreshDraftCount();csrf=user.csrf;$('adminLink').hidden=!user.is_admin;$('accountEmail').textContent=user.email;await refreshDocuments();$('auth').hidden=true;$('workspace').hidden=false;$('download').disabled=true;$('workspace').classList.add('view-list');$('closeList').hidden=true;list();if(docs.length&&!mobileLayout.matches)render(docs[0]);}
 $('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
 $('toggleAuth').onclick=()=>{register=!register;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';};
@@ -190,7 +230,7 @@ window.addEventListener('pagehide',()=>{if(dirty)persistDraft();});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&dirty&&!composing)save();});
 let refreshing=false;
 setInterval(async()=>{
- if(dirty||saving||composing||recoveryReview||document.hidden||refreshing||orderBusy||draggedId||$('historyDialog').open)return;
+ if(dirty||saving||composing||recoveryReview||document.hidden||refreshing||orderBusy||draggedId||$('historyDialog').open||$('copyDialog').open)return;
  const epoch=editEpoch;
  refreshing=true;
  try{

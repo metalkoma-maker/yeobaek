@@ -103,7 +103,7 @@ async function fixture(browser, before = false, options = {}) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:8765/');
-  if (options.viewport?.width <= 720) await page.locator('#documents button').first().click();
+  if (options.viewport?.width <= 720) await page.locator('#documents .documentCard').first().click();
   await page.waitForFunction(() => document.querySelector('#body').value.length === 1500);
   return { page, context, state, errors };
 }

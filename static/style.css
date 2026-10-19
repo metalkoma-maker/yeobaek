@@ -69,7 +69,24 @@ header .editArrow:disabled{cursor:default}
 header .editArrow:hover:not(:disabled){background:#edf2f7}
 @media(max-width:720px){header{gap:6px}#body{min-height:calc(100dvh - 330px)}}
 
-.listOrderStatus{font-size:12px;line-height:1.5;color:#6d7e90;margin:0 8px 10px;min-height:18px}#documents button{position:relative;padding-right:29px}#documents button[draggable=true]{cursor:grab}#documents button.dragging{opacity:.45;cursor:grabbing}.orderHandle{position:absolute;right:10px;top:14px;color:#8a99aa;font-size:19px;pointer-events:none}#documents button.dropBefore{box-shadow:0 -3px 0 #385f86}#documents button.dropAfter{box-shadow:0 3px 0 #385f86}
+.listOrderStatus{font-size:12px;line-height:1.5;color:#6d7e90;margin:0 8px 10px;min-height:18px}
+#documents .documentRow{position:relative}
+#documents .documentCard{position:relative;padding-right:48px}
+#documents .documentCard[draggable=true]{cursor:grab}
+#documents .documentCard.dragging{opacity:.45;cursor:grabbing}
+#documents .documentMore{position:absolute;right:7px;top:10px;display:block;width:33px;margin:0;padding:4px;border:0;background:transparent;font-size:22px;line-height:1;z-index:1}
+#documents .documentMore:hover,#documents .documentMore:focus-visible{background:#e7edf5}
+.orderHandle{position:absolute;right:40px;top:14px;color:#8a99aa;font-size:19px;pointer-events:none}
+#documents .documentRow.dropBefore{box-shadow:0 -3px 0 #385f86}
+#documents .documentRow.dropAfter{box-shadow:0 3px 0 #385f86}
+#copyDialog{width:min(450px,calc(100% - 24px));border:1px solid #dce3eb;border-radius:12px;padding:24px;color:#172b44}
+#copyDialog::backdrop{background:#172b4466}
+#copyDialog h2{margin:0 0 12px;font-size:22px}
+#copyDialog p{line-height:1.6;color:#64758b;font-size:14px}
+#copyDialog label{display:block;margin:18px 0 7px;font-size:14px}
+#copyDialog input{width:100%;padding:11px;border:1px solid #cfd8e3;border-radius:8px}
+#copyMessage{min-height:22px}
+.copyActions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 #historyDialog{width:min(1100px,calc(100% - 24px));max-height:88dvh;border:1px solid #dce3eb;border-radius:12px;padding:22px;color:#172b44}
 #historyDialog::backdrop{background:#172b4466}
 .historyTop{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
