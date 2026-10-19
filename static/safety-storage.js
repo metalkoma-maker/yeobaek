@@ -6,5 +6,6 @@ window.YeobaekDrafts=(()=>{
  function put(email,data){localStorage.setItem(namespace(email)+data.id+':'+tab,JSON.stringify(data));}
  function clearOwn(email,id,title,body){const key=namespace(email)+id+':'+tab,raw=localStorage.getItem(key);if(!raw)return;const data=JSON.parse(raw);if(data.title===title&&data.body===body)localStorage.removeItem(key);}
  function removeUnchanged(item){if(localStorage.getItem(item.key)===item.raw)localStorage.removeItem(item.key);}
- return {list,put,clearOwn,removeUnchanged,isOwn:item=>item.key.endsWith(':'+tab)};
+ function clearAccount(email){if(!email)return;const ns=namespace(email),keys=[];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key.startsWith(ns))keys.push(key);}for(const key of keys)localStorage.removeItem(key);}
+ return {list,put,clearOwn,removeUnchanged,clearAccount,isOwn:item=>item.key.endsWith(':'+tab)};
 })();

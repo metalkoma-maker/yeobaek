@@ -1,4 +1,6 @@
-import os, sqlite3, secrets, hashlib, hmac, time, re, json
+import os, sqlite3, secrets, hashlib, hmac, time, re, json, smtplib, ssl
+from email.message import EmailMessage
+from urllib.parse import urlsplit
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -10,6 +12,7 @@ DB = os.environ.get('DATABASE_PATH', 'data/novel.sqlite3')
 SECURE = os.environ.get('COOKIE_SECURE', '0') == '1'
 SEOUL = ZoneInfo('Asia/Seoul')
 CHECKPOINT_INTERVAL = 30 * 60
+RESET_LIFETIME = 30 * 60
 
 def db():
     if 'db' not in g:
@@ -36,6 +39,7 @@ def init():
         CREATE TABLE IF NOT EXISTS daily(manuscript_id TEXT REFERENCES manuscripts(id) ON DELETE CASCADE,day TEXT NOT NULL,delta INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(manuscript_id,day));
         CREATE TABLE IF NOT EXISTS manuscript_order(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,ids TEXT NOT NULL,version INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,started INTEGER NOT NULL,count INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS password_resets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
         ''')
         # Existing recent history must survive the new rolling-history policy.
         # Copy it once in one transaction, without changing manuscripts or history.
@@ -75,7 +79,8 @@ def guard():
     raw = request.cookies.get('novel_session','')
     row = db().execute('SELECT s.*,u.email FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>?',(hashlib.sha256(raw.encode()).hexdigest(),int(time.time()))).fetchone()
     if row: g.user = dict(row)
-    if request.path not in ['/api/register','/api/login','/api/me']:
+    if request.path not in ['/api/register','/api/login','/api/me',
+                            '/api/account/recover-id','/api/password-reset/request','/api/password-reset/confirm']:
         if not g.user: return fail('로그인이 필요합니다.',401)
         if request.method != 'GET' and not hmac.compare_digest(request.headers.get('X-CSRF-Token',''),g.user['csrf']): return fail('다시 로그인해 주세요.',403)
 
@@ -149,6 +154,136 @@ def me(): return jsonify(email=g.user['email'],csrf=g.user['csrf'],is_admin=app.
 def logout():
     db().execute('DELETE FROM sessions WHERE token=?',(g.user['token'],)); db().commit()
     response=jsonify(ok=True); response.delete_cookie('novel_session',secure=SECURE,samesite='Lax'); return response
+
+def valid_email(value):
+    return isinstance(value,str) and len(value.strip())<=254 and bool(re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',value.strip()))
+
+def valid_password(value): return isinstance(value,str) and 10<=len(value)<=256
+
+def recovery_mail_ready(reset=False):
+    if not os.environ.get('SMTP_HOST') or not os.environ.get('SMTP_FROM'): return False
+    if bool(os.environ.get('SMTP_USERNAME')) != bool(os.environ.get('SMTP_PASSWORD')): return False
+    if reset:
+        try: url=urlsplit(os.environ.get('APP_PUBLIC_URL',''))
+        except ValueError: return False
+        if url.scheme!='https' or not url.hostname or url.username or url.password or url.path not in ('','/') or url.query or url.fragment: return False
+    return True
+
+def send_account_mail(address,subject,body):
+    message=EmailMessage()
+    message['From']=os.environ['SMTP_FROM']; message['To']=address; message['Subject']=subject
+    message.set_content(body)
+    mode=os.environ.get('SMTP_SECURITY','ssl')
+    port=int(os.environ.get('SMTP_PORT','465' if mode=='ssl' else '587'))
+    if mode not in ('ssl','starttls'): raise ValueError('SMTP_SECURITY must be ssl or starttls')
+    context=ssl.create_default_context()
+    if mode=='ssl': connection=smtplib.SMTP_SSL(os.environ['SMTP_HOST'],port,timeout=10,context=context)
+    else: connection=smtplib.SMTP(os.environ['SMTP_HOST'],port,timeout=10)
+    with connection as smtp:
+        if mode=='starttls': smtp.starttls(context=context)
+        if os.environ.get('SMTP_USERNAME'): smtp.login(os.environ['SMTP_USERNAME'],os.environ['SMTP_PASSWORD'])
+        smtp.send_message(message)
+
+def recovery_limit(address):
+    now=int(time.time()); ip=request.remote_addr or 'unknown'
+    for subject,limit in [('email:'+ip+'|'+address,5),('ip:'+ip,60)]:
+        key=hashlib.sha256(('recovery:'+subject).encode()).hexdigest()
+        db().execute('INSERT INTO attempts VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN started<? THEN 1 ELSE count+1 END,started=CASE WHEN started<? THEN excluded.started ELSE started END',
+                     (key,now,now-900,now-900))
+        if db().execute('SELECT count FROM attempts WHERE key=?',(key,)).fetchone()[0]>limit:
+            db().commit(); return False
+    db().commit(); return True
+
+@app.post('/api/account/recover-id')
+def recover_id():
+    data=request.get_json() or {}; address=data.get('email')
+    if not valid_email(address): return fail('이메일 주소를 확인해 주세요.')
+    if not recovery_mail_ready(): return fail('이메일 발송이 아직 준비되지 않았습니다.',503)
+    address=address.strip().lower()
+    if not recovery_limit(address): return fail('요청이 많습니다. 15분 후 다시 시도해 주세요.',429)
+    row=db().execute('SELECT email FROM users WHERE email=?',(address,)).fetchone()
+    body=(f'소설여백 로그인 아이디는 {row["email"]}입니다.\n' if row else
+          '이 주소로 등록된 소설여백 계정을 찾지 못했습니다.\n')
+    try: send_account_mail(address,'소설여백 로그인 이메일 안내',body+'본인이 요청하지 않았다면 이 메일을 무시하세요.')
+    except Exception:
+        app.logger.exception('Account email delivery failed')
+        return fail('이메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.',503)
+    return jsonify(message='입력한 이메일로 안내를 보냈습니다.')
+
+@app.post('/api/password-reset/request')
+def request_password_reset():
+    data=request.get_json() or {}; address=data.get('email')
+    if not valid_email(address): return fail('이메일 주소를 확인해 주세요.')
+    if not recovery_mail_ready(reset=True): return fail('비밀번호 복구 메일이 아직 준비되지 않았습니다.',503)
+    address=address.strip().lower()
+    if not recovery_limit(address): return fail('요청이 많습니다. 15분 후 다시 시도해 주세요.',429)
+    row=db().execute('SELECT id FROM users WHERE email=?',(address,)).fetchone()
+    token=secrets.token_urlsafe(32) if row else None
+    token_hash=hashlib.sha256(token.encode()).hexdigest() if token else None
+    db().execute('DELETE FROM password_resets WHERE expires<=?',(int(time.time()),))
+    if row:
+        db().execute('INSERT INTO password_resets VALUES(?,?,?)',(token_hash,row['id'],int(time.time())+RESET_LIFETIME))
+    db().commit()
+    if token:
+        link=os.environ['APP_PUBLIC_URL'].rstrip('/')+'/#reset='+token
+        body='소설여백 비밀번호 재설정 링크입니다. 30분 동안 한 번만 사용할 수 있습니다.\n'+link+'\n본인이 요청하지 않았다면 이 메일을 무시하세요.'
+    else: body='이 주소로 등록된 소설여백 계정을 찾지 못했습니다. 본인이 요청하지 않았다면 이 메일을 무시하세요.'
+    try: send_account_mail(address,'소설여백 비밀번호 재설정',body)
+    except Exception:
+        if token_hash: db().execute('DELETE FROM password_resets WHERE token_hash=?',(token_hash,)); db().commit()
+        app.logger.exception('Password reset email delivery failed')
+        return fail('이메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.',503)
+    return jsonify(message='입력한 이메일로 안내를 보냈습니다.')
+
+@app.post('/api/password-reset/confirm')
+def confirm_password_reset():
+    data=request.get_json() or {}; token=data.get('token'); password=data.get('new_password')
+    if not isinstance(token,str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}',token) or not valid_password(password):
+        return fail('재설정 링크와 새 비밀번호를 확인해 주세요.')
+    token_hash=hashlib.sha256(token.encode()).hexdigest()
+    db().execute('BEGIN IMMEDIATE')
+    row=db().execute('SELECT user_id FROM password_resets WHERE token_hash=? AND expires>?',(token_hash,int(time.time()))).fetchone()
+    if not row: db().rollback(); return fail('재설정 링크가 만료되었거나 이미 사용됐습니다.',400)
+    salt=secrets.token_hex(16)
+    db().execute('UPDATE users SET password=? WHERE id=?',(salt+':'+digest(password,salt),row['user_id']))
+    db().execute('DELETE FROM sessions WHERE user_id=?',(row['user_id'],))
+    db().execute('DELETE FROM password_resets WHERE user_id=?',(row['user_id'],))
+    db().commit()
+    response=jsonify(ok=True)
+    response.delete_cookie('novel_session',secure=SECURE,samesite='Lax')
+    return response
+
+@app.post('/api/account/password')
+def change_password():
+    data=request.get_json() or {}; old=data.get('current_password'); new=data.get('new_password')
+    if not valid_password(old) or not valid_password(new): return fail('현재 비밀번호와 10자 이상의 새 비밀번호를 입력해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    row=db().execute('SELECT password FROM users WHERE id=?',(g.user['user_id'],)).fetchone()
+    salt,expected=row['password'].split(':')
+    if not hmac.compare_digest(digest(old,salt),expected):
+        db().rollback(); return fail('현재 비밀번호가 맞지 않습니다.',403)
+    if hmac.compare_digest(old,new): db().rollback(); return fail('기존과 다른 비밀번호를 입력해 주세요.')
+    salt=secrets.token_hex(16)
+    db().execute('UPDATE users SET password=? WHERE id=?',(salt+':'+digest(new,salt),g.user['user_id']))
+    db().execute('DELETE FROM sessions WHERE user_id=?',(g.user['user_id'],))
+    db().execute('DELETE FROM password_resets WHERE user_id=?',(g.user['user_id'],))
+    db().commit()
+    return session_response(g.user['user_id'],g.user['email'])
+
+@app.post('/api/account/delete')
+def delete_account():
+    data=request.get_json() or {}; password=data.get('password'); confirmation=data.get('confirmation')
+    if not valid_password(password) or confirmation!='탈퇴': return fail('비밀번호와 탈퇴 확인 문구를 입력해 주세요.')
+    if app.is_admin(g.user): return fail('관리자 계정은 이 화면에서 탈퇴할 수 없습니다.',403)
+    db().execute('BEGIN IMMEDIATE')
+    row=db().execute('SELECT password FROM users WHERE id=?',(g.user['user_id'],)).fetchone()
+    salt,expected=row['password'].split(':')
+    if not hmac.compare_digest(digest(password,salt),expected): db().rollback(); return fail('비밀번호가 맞지 않습니다.',403)
+    db().execute('DELETE FROM users WHERE id=?',(g.user['user_id'],))
+    db().commit()
+    response=jsonify(ok=True)
+    response.delete_cookie('novel_session',secure=SECURE,samesite='Lax')
+    return response
 
 def owned(mid): return db().execute('SELECT * FROM manuscripts WHERE id=? AND user_id=?',(mid,g.user['user_id'])).fetchone()
 def pack(row):

@@ -357,3 +357,67 @@ $('restoreHistory').onclick=async()=>{
  }catch(e){if(historyActive(id,epoch))historyMessage(e.status===409?'다른 기기에서 글이 바뀌었습니다. 복원하지 않았습니다. 창을 닫고 다시 열어 주세요.':e.message);}
  finally{historyBusy=false;if(historyActive(id,epoch))$('restoreHistory').disabled=false;}
 };
+
+let recoveryMailMode='id',resetToken=null;
+function openRecoveryMail(mode){
+ recoveryMailMode=mode;
+ $('recoveryMailHeading').textContent=mode==='id'?'아이디 찾기':'비밀번호 찾기';
+ $('recoveryMailHelp').textContent=mode==='id'?'로그인 아이디는 가입한 이메일입니다. 주소를 입력하면 가입 여부를 메일로 안내합니다.':'가입한 이메일로 30분 동안 한 번 쓸 수 있는 재설정 링크를 보냅니다.';
+ $('recoveryEmail').value=$('email').value;$('recoveryMailMessage').textContent='';
+ $('recoveryMailDialog').showModal();$('recoveryEmail').focus();
+}
+$('recoverId').onclick=()=>openRecoveryMail('id');
+$('forgotPassword').onclick=()=>openRecoveryMail('password');
+$('recoveryMailClose').onclick=()=>$('recoveryMailDialog').close();
+$('recoveryMailForm').onsubmit=async e=>{
+ e.preventDefault();const button=$('recoveryMailSubmit');button.disabled=true;
+ try{
+  const path=recoveryMailMode==='id'?'/account/recover-id':'/password-reset/request';
+  const result=await api(path,'POST',{email:$('recoveryEmail').value});
+  $('recoveryMailMessage').textContent=result.message;
+ }catch(error){$('recoveryMailMessage').textContent=error.message;}
+ finally{button.disabled=false;}
+};
+const resetMatch=/^#reset=([A-Za-z0-9_-]{43})$/.exec(location.hash);
+if(resetMatch){
+ resetToken=resetMatch[1];history.replaceState(null,'',location.pathname+location.search);
+ $('resetDialog').showModal();$('resetPassword').focus();
+}
+$('resetClose').onclick=()=>$('resetDialog').close();
+$('resetForm').onsubmit=async e=>{
+ e.preventDefault();const password=$('resetPassword').value,again=$('resetPasswordAgain').value;
+ if(password!==again){$('resetMessage').textContent='새 비밀번호가 서로 다릅니다.';return;}
+ const button=$('resetSubmit');button.disabled=true;
+ try{
+  await api('/password-reset/confirm','POST',{token:resetToken,new_password:password});
+  resetToken=null;$('resetForm').reset();$('resetMessage').textContent='비밀번호를 바꿨습니다. 로그인해 주세요.';
+  button.hidden=true;
+ }catch(error){$('resetMessage').textContent=error.message;}
+ finally{button.disabled=false;}
+};
+$('accountSettings').onclick=async()=>{
+ if(saving||dirty&&!await save())return;
+ $('changePasswordMessage').textContent='';$('deleteAccountMessage').textContent='';
+ $('deleteAccountDetails').open=false;$('accountDialog').showModal();
+};
+$('accountClose').onclick=()=>$('accountDialog').close();
+$('changePasswordForm').onsubmit=async e=>{
+ e.preventDefault();const password=$('newPassword').value;
+ if(password!==$('newPasswordAgain').value){$('changePasswordMessage').textContent='새 비밀번호가 서로 다릅니다.';return;}
+ const button=$('changePasswordSubmit');button.disabled=true;
+ try{
+  const user=await api('/account/password','POST',{current_password:$('currentPassword').value,new_password:password});
+  csrf=user.csrf;$('changePasswordForm').reset();
+  $('changePasswordMessage').textContent='비밀번호를 바꿨습니다. 다른 기기에서는 다시 로그인해야 합니다.';
+ }catch(error){$('changePasswordMessage').textContent=error.message;}
+ finally{button.disabled=false;}
+};
+$('deleteAccountForm').onsubmit=async e=>{
+ e.preventDefault();if(saving||dirty&&!await save()){$('deleteAccountMessage').textContent='원고가 아직 저장되지 않았습니다. 저장 상태를 확인해 주세요.';return;}
+ const button=$('deleteAccountSubmit');button.disabled=true;
+ try{
+  await api('/account/delete','POST',{password:$('deletePassword').value,confirmation:$('deleteConfirmation').value});
+  try{YeobaekDrafts.clearAccount(draftEmail);}catch{}
+  location.assign('/');
+ }catch(error){$('deleteAccountMessage').textContent=error.message;button.disabled=false;}
+};
