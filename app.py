@@ -1,5 +1,5 @@
 import os, sqlite3, secrets, hashlib, hmac, time, re, json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, g
@@ -8,6 +8,8 @@ app = Flask(__name__, static_folder='static')
 app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024
 DB = os.environ.get('DATABASE_PATH', 'data/novel.sqlite3')
 SECURE = os.environ.get('COOKIE_SECURE', '0') == '1'
+SEOUL = ZoneInfo('Asia/Seoul')
+CHECKPOINT_INTERVAL = 30 * 60
 
 def db():
     if 'db' not in g:
@@ -29,13 +31,22 @@ def init():
         CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,csrf TEXT NOT NULL,expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS manuscripts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 0,updated INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS manuscript_history(manuscript_id TEXT NOT NULL REFERENCES manuscripts(id) ON DELETE CASCADE,version INTEGER NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(manuscript_id,version));
+        CREATE TABLE IF NOT EXISTS manuscript_checkpoints(manuscript_id TEXT NOT NULL REFERENCES manuscripts(id) ON DELETE CASCADE,version INTEGER NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,updated INTEGER NOT NULL,created INTEGER NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('auto','manual','before_restore','legacy')),label TEXT NOT NULL DEFAULT '',PRIMARY KEY(manuscript_id,version));
+        CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY,applied INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS daily(manuscript_id TEXT REFERENCES manuscripts(id) ON DELETE CASCADE,day TEXT NOT NULL,delta INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(manuscript_id,day));
         CREATE TABLE IF NOT EXISTS manuscript_order(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,ids TEXT NOT NULL,version INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,started INTEGER NOT NULL,count INTEGER NOT NULL);
         ''')
+        # Existing recent history must survive the new rolling-history policy.
+        # Copy it once in one transaction, without changing manuscripts or history.
+        db().execute('BEGIN IMMEDIATE')
+        if not db().execute("SELECT 1 FROM schema_migrations WHERE name='history_checkpoints_v1'").fetchone():
+            db().execute('''INSERT OR IGNORE INTO manuscript_checkpoints(manuscript_id,version,title,body,updated,created,kind,label)
+                SELECT manuscript_id,version,title,body,updated,updated,'legacy','기존 수정 이력' FROM manuscript_history''')
+            db().execute("INSERT INTO schema_migrations VALUES('history_checkpoints_v1',?)",(int(time.time()),))
         db().commit()
 
-def day(): return datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
+def day(): return datetime.now(SEOUL).date().isoformat()
 def count(text): return len(re.sub(r'\s', '', text))
 def digest(password, salt): return hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex()
 def fail(msg, code=400): return jsonify(error=msg), code
@@ -133,6 +144,46 @@ def pack(row):
     data.update(total=count(data['body']),today=delta[0] if delta else 0,day=day())
     return data
 
+def checkpoint(mid, row, kind, now, label=''):
+    db().execute('''INSERT INTO manuscript_checkpoints(manuscript_id,version,title,body,updated,created,kind,label) VALUES(?,?,?,?,?,?,?,?)
+        ON CONFLICT(manuscript_id,version) DO UPDATE SET
+        kind=CASE WHEN manuscript_checkpoints.kind='manual' AND excluded.kind='before_restore' THEN 'manual' ELSE excluded.kind END,
+        label=CASE WHEN manuscript_checkpoints.kind='manual' AND excluded.kind='before_restore' THEN manuscript_checkpoints.label ELSE excluded.label END,
+        created=excluded.created WHERE excluded.kind != 'auto' ''',
+                 (mid,row['version'],row['title'],row['body'],row['updated'],now,kind,label))
+
+def prune_checkpoints(mid, now):
+    """Keep recent automatic points, then one per Seoul day/month; never prune named points."""
+    rows=db().execute("SELECT version,updated FROM manuscript_checkpoints WHERE manuscript_id=? AND kind='auto' ORDER BY updated DESC,version DESC",(mid,)).fetchall()
+    today=datetime.fromtimestamp(now,SEOUL).date()
+    cutoff=today-timedelta(days=29)
+    newest_month=today.year*12+today.month-1
+    keep=set(); days=set(); months=set()
+    for index,row in enumerate(rows):
+        written=datetime.fromtimestamp(row['updated'],SEOUL).date()
+        month=written.year*12+written.month-1
+        if index<10 or (cutoff<=written<=today and written not in days) or (newest_month-11<=month<=newest_month and month not in months):
+            keep.add(row['version']); days.add(written); months.add(month)
+    if keep:
+        placeholders=','.join('?' for _ in keep)
+        db().execute(f"DELETE FROM manuscript_checkpoints WHERE manuscript_id=? AND kind='auto' AND version NOT IN ({placeholders})",(mid,*keep))
+
+def automatic_checkpoint(mid, row, now):
+    if row['version']<1: return
+    latest=db().execute('SELECT max(created) FROM manuscript_checkpoints WHERE manuscript_id=?',(mid,)).fetchone()[0]
+    if latest is None or now-latest>=CHECKPOINT_INTERVAL or now-row['updated']>=CHECKPOINT_INTERVAL:
+        checkpoint(mid,row,'auto',now)
+        prune_checkpoints(mid,now)
+
+def save_manuscript(mid, old, title, body, now, keep_before_restore=False):
+    if keep_before_restore: checkpoint(mid,old,'before_restore',now,'복원 전 글')
+    else: automatic_checkpoint(mid,old,now)
+    db().execute('INSERT OR IGNORE INTO manuscript_history VALUES(?,?,?,?,?)',(mid,old['version'],old['title'],old['body'],old['updated']))
+    db().execute('DELETE FROM manuscript_history WHERE manuscript_id=? AND version NOT IN (SELECT version FROM manuscript_history WHERE manuscript_id=? ORDER BY version DESC LIMIT 50)',(mid,mid))
+    delta=count(body)-count(old['body'])
+    db().execute('UPDATE manuscripts SET title=?,body=?,version=version+1,updated=? WHERE id=?',(title,body,now,mid))
+    db().execute('INSERT INTO daily VALUES(?,?,?) ON CONFLICT(manuscript_id,day) DO UPDATE SET delta=delta+excluded.delta',(mid,day(),delta))
+
 def manuscript_list_state():
     rows=db().execute('SELECT * FROM manuscripts WHERE user_id=? ORDER BY updated DESC,rowid DESC',(g.user['user_id'],)).fetchall()
     saved=db().execute('SELECT ids,version FROM manuscript_order WHERE user_id=?',(g.user['user_id'],)).fetchone()
@@ -187,11 +238,7 @@ def manuscript(mid):
         result=pack(row); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
     if title == row['title'] and body == row['body']:
         result=pack(row); db().rollback(); return jsonify(result)
-    db().execute('INSERT OR IGNORE INTO manuscript_history VALUES(?,?,?,?,?)',(mid,row['version'],row['title'],row['body'],row['updated']))
-    db().execute('DELETE FROM manuscript_history WHERE manuscript_id=? AND version NOT IN (SELECT version FROM manuscript_history WHERE manuscript_id=? ORDER BY version DESC LIMIT 50)',(mid,mid))
-    delta=count(body)-count(row['body'])
-    db().execute('UPDATE manuscripts SET title=?,body=?,version=version+1,updated=? WHERE id=?',(title,body,int(time.time()),mid))
-    db().execute('INSERT INTO daily VALUES(?,?,?) ON CONFLICT(manuscript_id,day) DO UPDATE SET delta=delta+excluded.delta',(mid,day(),delta))
+    save_manuscript(mid,row,title,body,int(time.time()))
     db().commit(); return jsonify(pack(owned(mid)))
 
 
@@ -206,6 +253,52 @@ def history_item(mid,version):
     if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
     row=db().execute('SELECT version,title,body,updated FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
     return jsonify(dict(row)) if row else fail('수정 이력을 찾을 수 없습니다.',404)
+
+@app.route('/api/manuscripts/<mid>/checkpoints',methods=['GET','POST'])
+def checkpoints(mid):
+    if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
+    if request.method=='GET':
+        rows=db().execute('SELECT version,title,updated,created,kind,label,length(body) AS characters FROM manuscript_checkpoints WHERE manuscript_id=? ORDER BY updated DESC,version DESC',(mid,)).fetchall()
+        return jsonify([dict(row) for row in rows])
+    data=request.get_json() or {}
+    version=data.get('version'); label=data.get('label','중요한 버전'); expected=data.get('expected_current_version')
+    if (type(version) is not int or version<0 or not isinstance(label,str) or not 1<=len(label.strip())<=80
+            or (expected is not None and (type(expected) is not int or expected<0))):
+        return fail('보관할 버전과 이름을 확인해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    current=owned(mid)
+    if expected is not None and expected!=current['version']:
+        result=pack(current); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
+    source=current if current['version']==version else db().execute('SELECT * FROM manuscript_checkpoints WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
+    if source is None: source=db().execute('SELECT * FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
+    if source is None: db().rollback(); return fail('보관할 버전을 찾을 수 없습니다.',404)
+    checkpoint(mid,source,'manual',int(time.time()),label.strip())
+    db().commit()
+    return jsonify(version=version,label=label.strip(),kind='manual')
+
+@app.get('/api/manuscripts/<mid>/checkpoints/<int:version>')
+def checkpoint_item(mid,version):
+    if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
+    row=db().execute('SELECT version,title,body,updated,kind,label FROM manuscript_checkpoints WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
+    return jsonify(dict(row)) if row else fail('복원 지점을 찾을 수 없습니다.',404)
+
+@app.post('/api/manuscripts/<mid>/restore')
+def restore_manuscript(mid):
+    data=request.get_json() or {}
+    version=data.get('version'); source_version=data.get('source_version')
+    if type(version) is not int or type(source_version) is not int or version<0 or source_version<0:
+        return fail('복원할 버전을 확인해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    current=owned(mid)
+    if not current: db().rollback(); return fail('원고를 찾을 수 없습니다.',404)
+    if current['version']!=version:
+        result=pack(current); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
+    source=db().execute('SELECT title,body FROM manuscript_checkpoints WHERE manuscript_id=? AND version=?',(mid,source_version)).fetchone()
+    if source is None: source=db().execute('SELECT title,body FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,source_version)).fetchone()
+    if source is None: db().rollback(); return fail('복원할 버전을 찾을 수 없습니다.',404)
+    if source['title']!=current['title'] or source['body']!=current['body']:
+        save_manuscript(mid,current,source['title'],source['body'],int(time.time()),keep_before_restore=True)
+    db().commit(); return jsonify(pack(owned(mid)))
 
 @app.get('/')
 def index(): return send_from_directory('static','index.html')

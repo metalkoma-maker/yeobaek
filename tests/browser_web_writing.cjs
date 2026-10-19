@@ -79,7 +79,19 @@ async function performanceCheck(browser,preUndo){
   }
   {
    const {page,context,state}=await fixture(browser);await page.locator('#body').focus();await page.locator('#body').evaluate(b=>b.setSelectionRange(700,705));await page.keyboard.press('Backspace');assert.equal((await page.inputValue('#body')).length,1495);await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),full);assert.deepEqual(await page.locator('#body').evaluate(b=>[b.selectionStart,b.selectionEnd]),[700,705]);await saved(page);
-   await page.click('#historyButton');page.once('dialog',d=>d.accept());await page.locator('#safetyItems button').first().click();await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');await saved(page);assert.equal(state.doc.body,'가짜 이전 글');assert.equal(await page.locator('#undoEdit').isDisabled(),true);await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');console.log('PASS: selected deletion restores selection; existing server history restore starts a safe editing baseline');await context.close();
+   await page.click('#historyButton');await page.locator('#historyDialog').waitFor({state:'visible'});
+   await page.locator('#recentHistory summary').click();await page.locator('#recentHistoryList .historyRow[data-version="0"]').click();
+   await page.waitForFunction(()=>document.querySelector('#historyOldBody').value==='가짜 이전 글');
+   await page.locator('#historyLabel').fill('중요한 초고');await page.click('#pinSelected');
+   await page.waitForFunction(()=>document.querySelector('#checkpointList').textContent.includes('중요한 초고'));
+   assert.equal(state.checkpoints.find(point=>point.version===0).kind,'manual');
+   page.once('dialog',d=>d.accept());await page.click('#restoreHistory');
+   await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');
+   assert.equal(state.doc.body,'가짜 이전 글');assert.equal(state.restores.length,1);
+   assert.equal(state.checkpoints.find(point=>point.kind==='before_restore').body,full);
+   assert.equal(await page.locator('#undoEdit').isDisabled(),true);
+   await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');
+   console.log('PASS: dated history preview, manual pin, atomic restore, and clean editing baseline');await context.close();
   }
   for(const viewport of [{width:1280,height:800},{width:390,height:844}]){
    const {page,context}=await fixture(browser,false,{viewport});
