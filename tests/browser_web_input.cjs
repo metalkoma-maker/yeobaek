@@ -23,7 +23,7 @@ const instrument = () => {
     Storage.prototype[method] = function(...args) { m[metric]++; return original.apply(this,args); };
   }
   const replace = String.prototype.replace;
-  String.prototype.replace = function(pattern,...args) { if (pattern instanceof RegExp && pattern.source === '\\s') m.counts++; return replace.call(this,pattern,...args); };
+  String.prototype.replace = function(pattern,...args) { if (pattern instanceof RegExp && (pattern.source === '\\s' || pattern.source === '[\\r\\n\\u2028\\u2029]')) m.counts++; return replace.call(this,pattern,...args); };
   const replaceChildren = Element.prototype.replaceChildren;
   Element.prototype.replaceChildren = function(...args) { if(this.id==='documents')m.listRebuilds++; return replaceChildren.apply(this,args); };
   const add = EventTarget.prototype.addEventListener;
