@@ -70,6 +70,7 @@ header .editArrow:hover:not(:disabled){background:#edf2f7}
 @media(max-width:720px){header{gap:6px}#body{min-height:calc(100dvh - 330px)}}
 
 .listOrderStatus{font-size:12px;line-height:1.5;color:#6d7e90;margin:0 8px 10px;min-height:18px}
+.listOrderStatus:empty{display:none}
 #documents .documentRow{position:relative}
 #documents .documentCard{position:relative;padding-right:48px}
 #documents .documentCard[draggable=true]{cursor:grab}
