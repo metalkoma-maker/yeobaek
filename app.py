@@ -511,7 +511,7 @@ def app_manifest():
     response.headers['Cache-Control'] = 'no-store'
     return response
 @app.get('/__deployment_health__')
-def deployment_health(): return jsonify(api='manuscript-order-v1')
+def deployment_health(): return jsonify(api='history-account-v1')
 @app.get('/<path:path>')
 def assets(path): return send_from_directory('static',path)
 

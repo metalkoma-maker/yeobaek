@@ -47,6 +47,10 @@ class ActionsDeployTest(unittest.TestCase):
         if action == 'start' and (self.app / 'app.py').read_bytes().startswith(b'new synthetic'):
             with sqlite3.connect(self.database) as db:
                 db.execute('CREATE TABLE IF NOT EXISTS manuscript_order(user_id TEXT PRIMARY KEY, ids TEXT NOT NULL, version INTEGER NOT NULL)')
+                db.execute('CREATE TABLE IF NOT EXISTS manuscript_checkpoints(manuscript_id TEXT, version INTEGER, title TEXT, body TEXT, updated INTEGER, created INTEGER, kind TEXT, label TEXT)')
+                db.execute('CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY, applied INTEGER)')
+                db.execute('CREATE TABLE IF NOT EXISTS password_resets(token_hash TEXT, user_id TEXT, expires INTEGER)')
+                db.executemany('INSERT OR IGNORE INTO schema_migrations VALUES (?,1)', [('history_checkpoints_v1',), ('count_spaces_v1',)])
 
     def release(self, extra=None):
         bodies = {n: ('new synthetic ' + n).encode() for n in gateway.FILES}
@@ -112,6 +116,10 @@ class ActionsDeployTest(unittest.TestCase):
         try:
             self.assertEqual(conn.execute('PRAGMA journal_mode=WAL').fetchone()[0], 'wal')
             conn.execute('CREATE TABLE manuscript_order(user_id TEXT PRIMARY KEY, ids TEXT NOT NULL, version INTEGER NOT NULL)')
+            conn.execute('CREATE TABLE manuscript_checkpoints(manuscript_id TEXT, version INTEGER, title TEXT, body TEXT, updated INTEGER, created INTEGER, kind TEXT, label TEXT)')
+            conn.execute('CREATE TABLE schema_migrations(name TEXT PRIMARY KEY, applied INTEGER)')
+            conn.execute('CREATE TABLE password_resets(token_hash TEXT, user_id TEXT, expires INTEGER)')
+            conn.executemany('INSERT INTO schema_migrations VALUES (?,1)', [('history_checkpoints_v1',), ('count_spaces_v1',)])
             conn.execute('INSERT INTO manuscripts VALUES (?,?)', ('second-id', 'new data'))
             conn.commit()
         finally:
@@ -157,6 +165,18 @@ class ActionsDeployTest(unittest.TestCase):
         self.assertFalse((self.state / 'pending.json').exists())
         gateway.schema_ready(self.database)
         self.assert_protected()
+
+    def test_schema_check_requires_history_account_tables_and_migration_markers(self):
+        self.instance.deploy(self.expected, self.release())
+        with sqlite3.connect(self.database) as db:
+            db.execute("DELETE FROM schema_migrations WHERE name='history_checkpoints_v1'")
+        with self.assertRaisesRegex(ValueError, 'migrations are missing'):
+            gateway.schema_ready(self.database)
+        with sqlite3.connect(self.database) as db:
+            db.execute("INSERT INTO schema_migrations VALUES ('history_checkpoints_v1',1)")
+            db.execute('DROP TABLE password_resets')
+        with self.assertRaisesRegex(ValueError, 'password_resets'):
+            gateway.schema_ready(self.database)
 
     def test_stale_inspect_and_backend_drift_refuse_writes(self):
         (self.app / 'static/app.js').write_bytes(b'manual edit')

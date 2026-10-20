@@ -127,8 +127,8 @@ jobs:
           expected=$(INSPECTION="$inspection" python3 - <<'PY'
           import json, os, re
           report = json.loads(os.environ['INSPECTION'])
-          if report.get('capability') != 'code-and-additive-manuscript-order-v1':
-              raise SystemExit('서버에 제한된 코드 배포 도구를 먼저 한 번 설치해야 합니다.')
+          if report.get('capability') != 'code-and-additive-history-account-v1':
+              raise SystemExit('서버 배포 도구의 이력·계정 스키마 지원을 먼저 설치해야 합니다.')
           fingerprint = report.get('fingerprint', '')
           if not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
               raise SystemExit('서버 코드 fingerprint가 올바르지 않습니다.')

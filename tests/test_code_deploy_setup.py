@@ -18,24 +18,51 @@ spec.loader.exec_module(setup)
 repair_spec = importlib.util.spec_from_file_location('repair_wal_gateway', root / 'deploy/repair_wal_gateway.py')
 repair = importlib.util.module_from_spec(repair_spec)
 repair_spec.loader.exec_module(repair)
+history_spec = importlib.util.spec_from_file_location('upgrade_history_gateway', root / 'deploy/upgrade_history_gateway.py')
+history_upgrade = importlib.util.module_from_spec(history_spec)
+history_spec.loader.exec_module(history_upgrade)
 
 
 class CodeDeploySetupTest(unittest.TestCase):
-    def test_single_file_repair_package_has_exact_gateway(self):
+    def test_single_file_history_upgrade_package_has_exact_gateway(self):
         gateway = (root / 'deploy/actions_gateway.py').read_bytes()
-        self.assertEqual(repair.digest(gateway), repair.NEW_SHA256)
+        self.assertEqual(history_upgrade.digest(gateway), history_upgrade.NEW_SHA256)
+        self.assertEqual(history_upgrade.OLD_SHA256, repair.NEW_SHA256)
         with tempfile.TemporaryDirectory() as temporary:
-            package = Path(temporary) / 'repair.pyz'
+            package = Path(temporary) / 'upgrade.pyz'
             with zipfile.ZipFile(package, 'w') as archive:
-                archive.write(root / 'deploy/repair_wal_gateway.py', '__main__.py')
+                archive.write(root / 'deploy/upgrade_history_gateway.py', '__main__.py')
                 archive.writestr('actions_gateway.py', gateway)
             with patch.object(sys, 'argv', [str(package)]):
-                self.assertEqual(repair.replacement_bytes(), gateway)
+                self.assertEqual(history_upgrade.replacement_bytes(), gateway)
             with zipfile.ZipFile(package, 'a') as archive:
                 archive.writestr('unexpected.txt', 'bad')
             with patch.object(sys, 'argv', [str(package)]):
-                with self.assertRaisesRegex(ValueError, 'Unexpected repair package'):
-                    repair.replacement_bytes()
+                with self.assertRaisesRegex(ValueError, 'Unexpected upgrade package'):
+                    history_upgrade.replacement_bytes()
+
+    def test_history_gateway_upgrade_restores_previous_file_if_inspect_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'gateway'
+            old, new = b'old synthetic gateway', b'new synthetic gateway'
+            target.write_bytes(old)
+            original_stat = Path.stat
+            def synthetic_stat(path, *args, **kwargs):
+                info = original_stat(path, *args, **kwargs)
+                return SimpleNamespace(st_uid=0, st_mode=info.st_mode) if path == target else info
+            with patch.object(history_upgrade, 'GATEWAY', target), \
+                 patch.object(history_upgrade, 'OLD_SHA256', history_upgrade.digest(old)), \
+                 patch.object(history_upgrade, 'NEW_SHA256', history_upgrade.digest(new)), \
+                 patch.object(history_upgrade, 'replacement_bytes', return_value=new), \
+                 patch.object(history_upgrade, 'verify_inspect', side_effect=['a' * 64, ValueError('bad post-install inspect')]), \
+                 patch.object(history_upgrade, 'install_bytes', side_effect=lambda path, body: path.write_bytes(body)), \
+                 patch.object(history_upgrade.os, 'geteuid', return_value=0), \
+                 patch.object(Path, 'stat', synthetic_stat), \
+                 patch.object(history_upgrade.os, 'chown'), \
+                 patch.object(history_upgrade.os, 'chmod'):
+                with self.assertRaisesRegex(ValueError, 'bad post-install inspect'):
+                    history_upgrade.main()
+            self.assertEqual(target.read_bytes(), old)
 
     def test_extra_ssh_authentication_path_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
