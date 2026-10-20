@@ -23,11 +23,24 @@ export default function App() {
   const [comparison, setComparison] = useState<{ a: Manuscript; b: Draft } | null>(null);
   const [font, setFont] = useState(12); const [active, setActive] = useState(true);
   const lock = useRef(false);
+  async function checkpointCurrent(candidate = editorRef.current) {
+    const client = api.current;
+    if (!candidate || !client) return;
+    if (candidate.dirty) {
+      try { await candidate.preserve(); } catch { setError('기기 임시 저장 실패. 공유로 글을 보관해 주세요.'); return; }
+      if (candidate.busy || candidate.review || candidate.conflict || !await candidate.save()) return;
+    }
+    if (candidate.busy || candidate.dirty || candidate.review || candidate.conflict) return;
+    try { await client.checkpoint(candidate.base.id, candidate.base.version); }
+    catch { /* Offline and older test servers can retry on the next open. */ }
+  }
   useEffect(() => { if (!production && !process.env.EXPO_PUBLIC_TEST_API_URL) void AsyncStorage.getItem('yeobaek.mobile.server').then(v => { if (v) setAddress(v); }).catch(() => {}); }, [production]);
   useEffect(() => {
+    let previous = AppState.currentState;
     const subscription = AppState.addEventListener('change', state => {
       setActive(state === 'active');
-      if (state !== 'active' && editorRef.current?.dirty) void editorRef.current.preserve().catch(() => { setError('기기 임시 저장 실패. 공유로 글을 보관해 주세요.'); });
+      if (state !== 'active' || previous !== 'active') void checkpointCurrent();
+      previous = state;
     });
     return () => subscription.remove();
   }, []);
@@ -72,12 +85,14 @@ export default function App() {
     const local = await store.read(id);
     const value = new Editor(doc, store, d => api.current!.save(d), notify);
     attach(value);
+    void checkpointCurrent(value);
     if (local && (local.title !== doc.title || local.body !== doc.body)) setComparison({ a: doc, b: local });
   }
   async function list() {
     const current = editorRef.current;
     if (current?.busy) return;
     if (current?.dirty && !await current.save()) return;
+    await checkpointCurrent(current);
     await refreshList(); attach(null);
   }
   async function compare() {
@@ -105,6 +120,7 @@ export default function App() {
   }
   async function logout() {
     if (editor?.busy || (editor?.dirty && !await editor.save())) return;
+    await checkpointCurrent(editor);
     await api.current!.request('/logout', 'POST', {});
     attach(null); api.current = null; setUser(null); setDocs([]);
   }

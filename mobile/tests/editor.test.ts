@@ -81,6 +81,18 @@ test('native API requests include cookie credentials, CSRF and version; errors r
   try { await assert.rejects(client.save(doc()), (error: unknown) => error instanceof ApiError && error.status === 409 && error.current?.version === 2); }
   finally { globalThis.fetch = original; }
 });
+test('session checkpoint sends only the saved manuscript version', async () => {
+  const original = globalThis.fetch; const client = new Api('http://192.168.0.10:8000'); client.csrf = 'fake-csrf';
+  globalThis.fetch = (async (url, options) => {
+    assert.equal(url, 'http://192.168.0.10:8000/api/manuscripts/fake/session-checkpoint');
+    assert.equal(options?.method, 'POST');assert.equal(options?.credentials, 'include');
+    assert.equal((options?.headers as Record<string,string>)['X-CSRF-Token'], 'fake-csrf');
+    assert.deepEqual(JSON.parse(options?.body as string), { version: 3 });
+    return new Response(JSON.stringify({ version: 3, saved: true }), { status: 200 });
+  }) as typeof fetch;
+  try { assert.deepEqual(await client.checkpoint('fake', 3), { version: 3, saved: true }); }
+  finally { globalThis.fetch = original; }
+});
 test('only explicitly configured synthetic HTTPS API allowed; public production remains blocked', () => {
   const old = process.env.EXPO_PUBLIC_TEST_API_URL;
   const address = 'https://synthetic-demo-8000.app.github.dev';

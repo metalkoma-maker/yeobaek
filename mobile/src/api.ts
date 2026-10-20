@@ -67,4 +67,5 @@ export class Api {
   }
   get(id: string) { return this.request<Manuscript>('/manuscripts/' + id); }
   save(doc: Manuscript) { return this.request<Manuscript>('/manuscripts/' + doc.id, 'PUT', { title: doc.title, body: doc.body, version: doc.version }); }
+  checkpoint(id: string, version: number) { return this.request<{ version: number; saved: boolean }>('/manuscripts/' + id + '/session-checkpoint', 'POST', { version }); }
 }
