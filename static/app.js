@@ -318,7 +318,7 @@ $('historyButton').onclick=async()=>{
   if(!active()||historyRestoring)return;
   const request=++historyRequest;
   for(const button of tabs.children)button.setAttribute('aria-selected',String(button.textContent===(source==='recent'?'최근 수정 이력':'예전 수정 이력')));
-  $('safetyHelp').textContent=source==='recent'?'최근 변경 전 원고 50개를 보관합니다. 복원 전 현재 원고도 이력에 남습니다.':'작업을 마치거나 잠시 쉬었다 다시 쓸 때, 집필 중 약 30분마다 남긴 글입니다.';
+  $('safetyHelp').textContent=source==='recent'?'최근 변경 전 원고 50개를 보관합니다.':'복원 지점은 집필 중 약 30분마다, 화면을 나가거나 쉬었다 다시 쓸 때 남습니다.';
   records.replaceChildren();records.textContent='불러오는 중…';
   try{
    const rows=await api('/manuscripts/'+id+'/'+(source==='recent'?'history':'checkpoints'));
