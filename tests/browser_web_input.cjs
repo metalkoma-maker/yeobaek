@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const email = 'browser-test@example.com';
 const fakeBody = '가나다라마'.repeat(300); // 1,500 synthetic Korean code points.
-const count = body => Array.from(body.replace(/\s/gu, '')).length;
+const count = body => Array.from(body.replace(/[\r\n\u2028\u2029]/gu, '')).length;
 const copy = value => JSON.parse(JSON.stringify(value));
 const seed = () => ({ id: 'synthetic', title: '가짜 테스트', body: fakeBody, version: 1, updated: 1, total: 1500, today: 1500, day: '2099-01-01' });
 const instrument = () => {
@@ -23,7 +23,7 @@ const instrument = () => {
     Storage.prototype[method] = function(...args) { m[metric]++; return original.apply(this,args); };
   }
   const replace = String.prototype.replace;
-  String.prototype.replace = function(pattern,...args) { if (pattern instanceof RegExp && pattern.source === '\\s') m.counts++; return replace.call(this,pattern,...args); };
+  String.prototype.replace = function(pattern,...args) { if (pattern instanceof RegExp && (pattern.source === '\\s' || pattern.source === '[\\r\\n\\u2028\\u2029]')) m.counts++; return replace.call(this,pattern,...args); };
   const replaceChildren = Element.prototype.replaceChildren;
   Element.prototype.replaceChildren = function(...args) { if(this.id==='documents')m.listRebuilds++; return replaceChildren.apply(this,args); };
   const add = EventTarget.prototype.addEventListener;
@@ -44,7 +44,7 @@ async function fixture(browser, before = false, options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1280, height: 800 }, serviceWorkers: 'block' });
   await context.addInitScript(instrument);
   const page = await context.newPage();
-  const state = { doc: seed(), puts: [], gets: 0, fail: false, holdGet: null, holdPut: null, history: [{...seed(),version:0,title:'이전 가짜 제목',body:'가짜 이전 글'}] };
+  const state = { doc: seed(), puts: [], gets: 0, fail: false, holdGet: null, holdPut: null, history: [{...seed(),version:0,title:'이전 가짜 제목',body:'가짜 이전 글'}], checkpoints: [], restores: [], sessionPoints: [] };
   await page.route('http://127.0.0.1:8765/**', async route => {
     const req = route.request(), url = new URL(req.url());
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
@@ -65,6 +65,33 @@ async function fixture(browser, before = false, options = {}) {
       state.doc = { ...state.doc, ...data, version: state.doc.version + 1, total: count(data.body), today: state.doc.today + count(data.body) - state.doc.total };
       return json(state.doc);
     }
+    if (url.pathname === '/api/manuscripts/synthetic/checkpoints') {
+      if (req.method() === 'GET') return json(state.checkpoints.map(d=>({version:d.version,title:d.title,updated:d.updated,created:d.updated,kind:d.kind,label:d.label,characters:d.body.length})));
+      const data=req.postDataJSON();
+      if(data.expected_current_version!==undefined&&data.expected_current_version!==state.doc.version)return json({error:'가짜 동시 수정',current:state.doc},409);
+      const source=state.doc.version===data.version?state.doc:state.checkpoints.find(d=>d.version===data.version)||state.history.find(d=>d.version===data.version);
+      if(!source)return json({error:'없는 버전'},404);
+      state.checkpoints=state.checkpoints.filter(d=>d.version!==data.version);
+      state.checkpoints.push({...copy(source),kind:'manual',label:data.label});
+      return json({version:data.version,kind:'manual',label:data.label});
+    }
+    if (url.pathname === '/api/manuscripts/synthetic/session-checkpoint') {
+      const data=req.postDataJSON();state.sessionPoints.push(data);
+      if(data.version!==state.doc.version)return json({error:'가짜 동시 수정',current:state.doc},409);
+      state.checkpoints=state.checkpoints.filter(d=>d.version!==data.version);
+      state.checkpoints.push({...copy(state.doc),kind:'auto',label:''});
+      return json({version:data.version,saved:true});
+    }
+    if (url.pathname.startsWith('/api/manuscripts/synthetic/checkpoints/')) return json(state.checkpoints.find(d=>d.version===Number(url.pathname.split('/').at(-1))));
+    if (url.pathname === '/api/manuscripts/synthetic/restore') {
+      const data=req.postDataJSON();state.restores.push(data);
+      if(data.version!==state.doc.version)return json({error:'가짜 동시 수정',current:state.doc},409);
+      const source=state.checkpoints.find(d=>d.version===data.source_version)||state.history.find(d=>d.version===data.source_version);
+      if(!source)return json({error:'없는 버전'},404);
+      state.history.push(copy(state.doc));state.checkpoints.push({...copy(state.doc),kind:'before_restore',label:'복원 전 글'});
+      state.doc={...state.doc,title:source.title,body:source.body,version:state.doc.version+1,total:count(source.body)};
+      return json(state.doc);
+    }
     if (url.pathname === '/api/manuscripts/synthetic/history') return json(state.history.map(d=>({version:d.version,title:d.title,updated:d.updated,characters:d.body.length})));
     if (url.pathname.startsWith('/api/manuscripts/synthetic/history/')) return json(state.history.find(d=>d.version===Number(url.pathname.split('/').at(-1))));
     if (url.pathname.startsWith('/api/')) return json({ error: '없는 가짜 경로' }, 404);
@@ -83,7 +110,7 @@ async function fixture(browser, before = false, options = {}) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:8765/');
-  if (options.viewport?.width <= 720) await page.locator('#documents button').first().click();
+  if (options.viewport?.width <= 720) await page.locator('#documents .documentCard').first().click();
   await page.waitForFunction(() => document.querySelector('#body').value.length === 1500);
   return { page, context, state, errors };
 }

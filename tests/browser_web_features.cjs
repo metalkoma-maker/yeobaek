@@ -38,6 +38,14 @@ async function fixture(browser,state){
    if(data.version!==state.version)return json({error:'다른 기기의 순서 변경',current:{ids:state.ids,version:state.version}},409);
    state.ids=[...data.ids];state.version++;return json({ids:state.ids,version:state.version});
   }
+  const copying=/^\/api\/manuscripts\/([^/]+)\/copy$/.exec(url.pathname);
+  if(copying){
+   const source=state.docs.find(d=>d.id===copying[1]),data=req.postDataJSON();
+   if(data.version!==source.version)return json({error:'다른 기기에서 원고가 수정됐습니다.',current:source},409);
+   const created={...copy(source),id:'copy-'+state.docs.length,title:data.title,version:0,updated:Date.now()/1000|0,today:0};
+   state.docs.push(created);state.ids.unshift(created.id);return json(created,201);
+  }
+  if(/^\/api\/manuscripts\/[^/]+\/session-checkpoint$/.test(url.pathname))return json({version:req.postDataJSON().version,saved:true});
   if(url.pathname.startsWith('/api/manuscripts/')){
    const id=url.pathname.split('/')[3],doc=state.docs.find(d=>d.id===id);
    if(req.method()==='GET')return json(doc);
@@ -56,7 +64,7 @@ async function fixture(browser,state){
  await page.waitForFunction(expected=>document.querySelector('#body').value===expected,state.docs.find(d=>d.id===state.ids[0]).body);
  return {context,page,errors};
 }
-const ids=page=>page.locator('#documents button').evaluateAll(nodes=>nodes.map(node=>node.dataset.id));
+const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>nodes.map(node=>node.dataset.id));
 async function dragBefore(page,from,to){
  const saved=page.waitForResponse(r=>r.url().endsWith('/api/manuscript-order')&&r.request().method()==='PUT');
  await page.locator('[data-id="'+from+'"]').dragTo(page.locator('[data-id="'+to+'"]'),{targetPosition:{x:20,y:5}});
@@ -79,6 +87,58 @@ async function dragBefore(page,from,to){
    assert.equal(await page.inputValue('#body'),body);assert.deepEqual(errors,[]);
    console.log('PASS: TXT starts with Korean download time including seconds and preserves current text');
    await context.close();
+  }
+  {
+   const state=seed(),{context,page,errors}=await fixture(browser,state);
+   await page.locator('#body').fill('저장 후 복사할 글');
+   await page.locator('[data-id="a"] + .documentMore').click();
+   await page.locator('#copyDialog').waitFor({state:'visible'});
+   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 2고');
+   assert.equal(await page.locator('#copyMessage').textContent(),'');
+   assert.equal(await page.locator('#copyMessage').isVisible(),false);
+   assert.doesNotMatch(await page.locator('#copyDialog').innerText(),/3교를 시작할 때/);
+   await page.locator('#copyConfirm').click();
+   await page.waitForFunction(()=>current.id==='copy-3');
+   await page.waitForFunction(()=>!copyBusy&&!document.querySelector('#copyDialog').open);
+   assert.equal(state.docs.find(d=>d.id==='a').body,'저장 후 복사할 글');
+   assert.equal(state.docs.find(d=>d.id==='copy-3').body,'저장 후 복사할 글');
+   assert.equal(state.docs.find(d=>d.id==='copy-3').today,0);
+   assert.equal((await ids(page))[0],'copy-3');
+   await page.locator('[data-id="a"] + .documentMore').click();
+   await page.locator('#copyDialog').waitFor({state:'visible'});
+   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 3고');
+   await page.locator('#copyConfirm').click();
+   await page.waitForFunction(()=>current.id==='copy-4');
+   await page.waitForFunction(()=>!copyBusy&&!document.querySelector('#copyDialog').open);
+   await page.locator('[data-id="a"] + .documentMore').click();
+   await page.locator('#copyDialog').waitFor({state:'visible'});
+   const before=state.docs.length;state.docs.find(d=>d.id==='a').version++;
+   await page.locator('#copyConfirm').click();
+   await page.waitForFunction(()=>document.querySelector('#copyMessage').textContent.includes('다른 기기'));
+   assert.equal(state.docs.length,before);await page.locator('#copyCancel').click();
+   assert.deepEqual(errors,[]);console.log('PASS: saving as 2고/3고 preserves source and blocks stale copies');await context.close();
+  }
+  {
+   const state=seed();state.docs.find(d=>d.id==='a').title='가짜 원고 a · 2교';
+   const {context,page,errors}=await fixture(browser,state);
+   await page.locator('[data-id="a"] + .documentMore').click();
+   await page.locator('#copyDialog').waitFor({state:'visible'});
+   assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 3고');
+   assert.deepEqual(errors,[]);await context.close();
+  }
+  {
+   const state=seed(),longTitle='가'.repeat(200);
+   state.docs.find(d=>d.id==='a').title=longTitle;
+   const {context,page,errors}=await fixture(browser,state);
+   for(const round of [2,3]){
+    await page.locator('[data-id="a"] + .documentMore').click();
+    await page.locator('#copyDialog').waitFor({state:'visible'});
+    assert.equal(await page.inputValue('#copyTitle'),longTitle.slice(0,195)+' · '+round+'고');
+    await page.locator('#copyConfirm').click();
+    await page.waitForFunction(expected=>docs.length===expected,round+2);
+    await page.waitForFunction(()=>!copyBusy&&!document.querySelector('#copyDialog').open);
+   }
+   assert.deepEqual(errors,[]);console.log('PASS: a full-length title still advances copy round numbers');await context.close();
   }
   {
    const state=seed(),{context,page,errors}=await fixture(browser,state);

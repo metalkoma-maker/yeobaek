@@ -1,5 +1,6 @@
 """Run the reviewed web against a new synthetic-only DB, never a real DB."""
 import argparse
+import html
 import os
 from pathlib import Path
 import re
@@ -69,8 +70,35 @@ def main():
     with tempfile.TemporaryDirectory(prefix='yeobaek-web-preview-') as directory:
         os.environ['DATABASE_PATH'] = str(Path(directory) / 'synthetic.sqlite3')
         os.environ['COOKIE_SECURE'] = '1' if origin else '0'
+        os.environ['SMTP_HOST'] = 'synthetic-preview.invalid'
+        os.environ['SMTP_FROM'] = 'preview@synthetic.invalid'
+        os.environ['SMTP_USERNAME'] = os.environ['SMTP_PASSWORD'] = ''
+        os.environ['APP_PUBLIC_URL'] = origin or f'https://localhost:{args.port}'
         import app as module
         from flask import Response, request
+        messages = []
+
+        def fake_mail(address, subject, body):
+            if address == EMAIL:
+                messages.append((subject, body))
+                del messages[:-10]
+        module.send_account_mail = fake_mail
+
+        @module.app.get('/_preview/mail')
+        def preview_mail():
+            items = []
+            for subject, body in reversed(messages):
+                match = re.search(r'https://[^\s]+/#reset=[A-Za-z0-9_-]{43}', body)
+                link = f'<p><a href="{html.escape(match.group(0), quote=True)}">비밀번호 재설정 링크 열기</a></p>' if match else ''
+                items.append(f'<article><h2>{html.escape(subject)}</h2><pre>{html.escape(body)}</pre>{link}</article>')
+            content = ''.join(items) or '<p>아직 테스트 메일이 없습니다.</p>'
+            response = Response('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+                            '<title>소설여백 테스트 메일함</title><style>body{font:16px sans-serif;max-width:700px;margin:32px auto;padding:16px;color:#172b44}'
+                            'article{border:1px solid #dce3eb;border-radius:10px;padding:18px;margin:16px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}'
+                            '</style><h1>가짜 계정 테스트 메일함</h1><p>실제 메일은 발송되지 않습니다. <a href="/">테스트 웹으로 돌아가기</a></p>'
+                            + content + '</html>', mimetype='text/html')
+            response.headers['Cache-Control'] = 'no-store'
+            return response
         if origin:
             module.app.wsgi_app = PreviewOrigin(module.app.wsgi_app, origin, args.port)
 
@@ -100,7 +128,8 @@ def main():
                 html = html.replace('</head>', '<link rel="stylesheet" href="/_preview/banner.css"></head>')
                 html = html.replace('<body>', '<body><div id="previewNotice" role="note">'
                                     '<b>운영 전 미리보기 · 가짜 원고 전용</b><br>'
-                                    '서버를 멈추면 테스트 글은 초기화됩니다.</div>')
+                                    '서버를 멈추면 테스트 글은 초기화됩니다. '
+                                    '<a href="/_preview/mail">테스트 메일함</a></div>')
                 html = html.replace('</body>', '<script defer src="/_preview/login.js"></script></body>')
                 response.set_data(html)
                 response.headers['Cache-Control'] = 'no-store'

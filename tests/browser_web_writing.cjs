@@ -79,7 +79,48 @@ async function performanceCheck(browser,preUndo){
   }
   {
    const {page,context,state}=await fixture(browser);await page.locator('#body').focus();await page.locator('#body').evaluate(b=>b.setSelectionRange(700,705));await page.keyboard.press('Backspace');assert.equal((await page.inputValue('#body')).length,1495);await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),full);assert.deepEqual(await page.locator('#body').evaluate(b=>[b.selectionStart,b.selectionEnd]),[700,705]);await saved(page);
-   await page.click('#historyButton');page.once('dialog',d=>d.accept());await page.locator('#safetyItems button').first().click();await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');await saved(page);assert.equal(state.doc.body,'가짜 이전 글');assert.equal(await page.locator('#undoEdit').isDisabled(),true);await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');console.log('PASS: selected deletion restores selection; existing server history restore starts a safe editing baseline');await context.close();
+   state.checkpoints.push({...state.history[0],kind:'manual',label:'중요한 초고'});
+   await page.click('#historyButton');await page.locator('#safetyDialog').waitFor({state:'visible'});
+   assert.equal(await page.getByRole('tab',{name:'최근 수정 이력'}).getAttribute('aria-selected'),'true');
+   await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
+   await page.getByRole('tab',{name:'예전 수정 이력'}).click();
+   await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
+   assert.match(await page.locator('.historyRecords').innerText(),/중요한 초고/);
+   page.once('dialog',d=>{assert.match(d.message(),/가짜 이전 글/);void d.accept();});
+   await page.locator('.historyRecords button[data-version="0"]').click();
+   await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');
+   assert.equal(state.doc.body,'가짜 이전 글');assert.equal(state.restores.length,1);
+   assert.equal(state.checkpoints.find(point=>point.kind==='before_restore').body,full);
+   assert.equal(await page.locator('#undoEdit').isDisabled(),true);
+   await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');
+   console.log('PASS: recent/older tabs use the production list and confirmation while preserving atomic restore');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   await page.locator('#body').fill('가짜 세션 종료');await saved(page);
+   const response=page.waitForResponse(r=>r.url().endsWith('/session-checkpoint')&&r.request().method()==='POST');
+   await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+   assert.equal((await response).status(),200);
+   assert.equal(state.sessionPoints.at(-1).version,state.doc.version);
+   console.log('PASS: leaving the web requests a checkpoint of the saved manuscript');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   await page.locator('#body').fill('가 나\n다😀');
+   await page.waitForFunction(()=>document.querySelector('#total').textContent==='5');
+   assert.match(await page.locator('#countRule').textContent(),/띄어쓰기 포함 · 줄바꿈 제외/);
+   await saved(page);assert.equal(state.doc.total,5);
+   console.log('PASS: visible and saved character totals include spaces but exclude line breaks');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   state.doc.today_count_rule='without_spaces';
+   await page.evaluate(doc=>render(doc),state.doc);
+   await page.locator('#body').fill('가 나\n다😀');
+   await page.waitForFunction(()=>document.querySelector('#total').textContent==='5');
+   assert.equal(await page.locator('#today').textContent(),'+4');
+   assert.match(await page.locator('#countRule').textContent(),/오늘: 공백 제외 \(내일부터 통일\)/);
+   console.log('PASS: existing daily counter keeps its original units during the switch day');await context.close();
   }
   for(const viewport of [{width:1280,height:800},{width:390,height:844}]){
    const {page,context}=await fixture(browser,false,{viewport});

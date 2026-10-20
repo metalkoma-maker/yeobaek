@@ -7,7 +7,7 @@ class ManuscriptOrderTest(unittest.TestCase):
     def test_public_deployment_marker_identifies_backend_without_user_data(self):
         response=module.app.test_client().get('/__deployment_health__')
         self.assertEqual(response.status_code,200)
-        self.assertEqual(response.json,{'api':'manuscript-order-v1'})
+        self.assertEqual(response.json,{'api':'history-account-v1'})
 
     def account(self, label):
         client=module.app.test_client()
