@@ -34,11 +34,8 @@ async function fixture(browser,loggedIn){
  try{
   {
    const {context,page,state}=await fixture(browser,false);
-   await page.locator('#recoverId').click();await page.locator('#recoveryEmail').fill('fake@example.test');
-   await page.locator('#recoveryMailSubmit').click();
-   await page.waitForFunction(()=>document.querySelector('#recoveryMailMessage').textContent.includes('안내'));
-   assert.equal(state.calls.at(-1).path,'/api/account/recover-id');
-   await page.locator('#recoveryMailClose').click();await page.locator('#forgotPassword').click();
+   assert.equal(await page.locator('#recoverId').count(),0);
+   await page.locator('#forgotPassword').click();
    await page.locator('#recoveryEmail').fill('fake@example.test');await page.locator('#recoveryMailSubmit').click();
    await page.waitForFunction(()=>document.querySelector('#recoveryMailMessage').textContent.includes('안내'));
    assert.equal(state.calls.at(-1).path,'/api/password-reset/request');
@@ -66,6 +63,8 @@ async function fixture(browser,loggedIn){
    await page.locator('#deleteAccountSubmit').click();
    await page.locator('#deleteWarningDialog').waitFor({state:'visible'});
    assert.match(await page.locator('#deleteWarningText').textContent(),/계정과 모든 원고, 수정 이력, 복원 지점/);
+   assert.equal(await page.locator('#accountDialog').getByText('백업 파일에는 탈퇴 전 데이터가 남아 있을 수 있습니다.').count(),0);
+   assert.equal(await page.locator('#deleteWarningDialog').getByText('백업 파일에는 탈퇴 전 데이터가 남아 있을 수 있습니다.').count(),1);
    assert.equal(state.calls.filter(x=>x.path==='/api/account/delete').length,0);
    await page.locator('#deleteWarningCancel').click();
    assert.equal(state.calls.filter(x=>x.path==='/api/account/delete').length,0);

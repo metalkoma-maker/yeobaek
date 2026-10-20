@@ -336,22 +336,19 @@ $('historyButton').onclick=async()=>{
  await showTab('recent');
 };
 
-let recoveryMailMode='id',resetToken=null;
-function openRecoveryMail(mode){
- recoveryMailMode=mode;
- $('recoveryMailHeading').textContent=mode==='id'?'아이디 찾기':'비밀번호 찾기';
- $('recoveryMailHelp').textContent=mode==='id'?'로그인 아이디는 가입한 이메일입니다. 주소를 입력하면 가입 여부를 메일로 안내합니다.':'가입한 이메일로 30분 동안 한 번 쓸 수 있는 재설정 링크를 보냅니다.';
+let resetToken=null;
+function openRecoveryMail(){
+ $('recoveryMailHeading').textContent='비밀번호 찾기';
+ $('recoveryMailHelp').textContent='가입한 이메일로 30분 동안 한 번 쓸 수 있는 재설정 링크를 보냅니다.';
  $('recoveryEmail').value=$('email').value;$('recoveryMailMessage').textContent='';
  $('recoveryMailDialog').showModal();$('recoveryEmail').focus();
 }
-$('recoverId').onclick=()=>openRecoveryMail('id');
-$('forgotPassword').onclick=()=>openRecoveryMail('password');
+$('forgotPassword').onclick=openRecoveryMail;
 $('recoveryMailClose').onclick=()=>$('recoveryMailDialog').close();
 $('recoveryMailForm').onsubmit=async e=>{
  e.preventDefault();const button=$('recoveryMailSubmit');button.disabled=true;
  try{
-  const path=recoveryMailMode==='id'?'/account/recover-id':'/password-reset/request';
-  const result=await api(path,'POST',{email:$('recoveryEmail').value});
+  const result=await api('/password-reset/request','POST',{email:$('recoveryEmail').value});
   $('recoveryMailMessage').textContent=result.message;
  }catch(error){$('recoveryMailMessage').textContent=error.message;}
  finally{button.disabled=false;}
