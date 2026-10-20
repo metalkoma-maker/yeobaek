@@ -343,7 +343,8 @@ function openRecoveryMail(){
  $('recoveryEmail').value=$('email').value;$('recoveryMailMessage').textContent='';
  $('recoveryMailDialog').showModal();$('recoveryEmail').focus();
 }
-$('forgotPassword').onclick=openRecoveryMail;
+const forgotPasswordButton=$('forgotPassword');
+if(forgotPasswordButton)forgotPasswordButton.onclick=openRecoveryMail;
 $('recoveryMailClose').onclick=()=>$('recoveryMailDialog').close();
 $('recoveryMailForm').onsubmit=async e=>{
  e.preventDefault();const button=$('recoveryMailSubmit');button.disabled=true;
