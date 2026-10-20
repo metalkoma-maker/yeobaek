@@ -81,6 +81,7 @@ async function performanceCheck(browser,preUndo){
    const {page,context,state}=await fixture(browser);await page.locator('#body').focus();await page.locator('#body').evaluate(b=>b.setSelectionRange(700,705));await page.keyboard.press('Backspace');assert.equal((await page.inputValue('#body')).length,1495);await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),full);assert.deepEqual(await page.locator('#body').evaluate(b=>[b.selectionStart,b.selectionEnd]),[700,705]);await saved(page);
    state.checkpoints.push({...state.history[0],kind:'manual',label:'중요한 초고'});
    await page.click('#historyButton');await page.locator('#historyDialog').waitFor({state:'visible'});
+   await page.locator('#historyList .historyRow[data-version="0"]').waitFor({state:'visible'});
    assert.equal(await page.locator('#historyList .historyRow[data-version="0"]').count(),1);
    assert.match(await page.locator('#historyList').innerText(),/중요한 초고/);
    assert.equal(await page.locator('.historyPin').count(),0);
