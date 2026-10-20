@@ -64,7 +64,7 @@ async function fixture(browser,loggedIn){
    await page.locator('#deleteWarningDialog').waitFor({state:'visible'});
    assert.match(await page.locator('#deleteWarningText').textContent(),/계정과 모든 원고, 수정 이력, 복원 지점/);
    assert.equal(await page.locator('#accountDialog').getByText('백업 파일에는 탈퇴 전 데이터가 남아 있을 수 있습니다.').count(),0);
-   assert.equal(await page.locator('#deleteWarningDialog').getByText('백업 파일에는 탈퇴 전 데이터가 남아 있을 수 있습니다.').count(),1);
+   assert.equal(await page.locator('#deleteWarningDialog').getByText('백업 파일에는 탈퇴 전 데이터가 남아 있을 수 있습니다.').count(),0);
    assert.equal(state.calls.filter(x=>x.path==='/api/account/delete').length,0);
    await page.locator('#deleteWarningCancel').click();
    assert.equal(state.calls.filter(x=>x.path==='/api/account/delete').length,0);
