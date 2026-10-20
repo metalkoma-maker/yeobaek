@@ -7,7 +7,7 @@ function showEditor(){ $('workspace').classList.remove('view-list');$('sidebar')
 async function showList(){if(dirty&&!await save())return;$('workspace').classList.add('view-list');$('sidebar').classList.remove('open');$('closeList').hidden=!current;try{await refreshDocuments();}catch(e){showEditor();notice(e.message);}}
 const count=s=>Array.from(s.replace(/[\r\n\u2028\u2029]/gu,'')).length;
 const countWithoutSpaces=s=>Array.from(s.replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/gu,'')).length;
-async function api(path,method='GET',data){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data)});const value=await r.json();if(!r.ok){const e=Error(value.error||'요청에 실패했습니다.');e.status=r.status;e.value=value;throw e;}return value;}
+async function api(path,method='GET',data,options={}){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data),...options});const value=await r.json();if(!r.ok){const e=Error(value.error||'요청에 실패했습니다.');e.status=r.status;e.value=value;throw e;}return value;}
 let statsFrame=null;
 function textIfChanged(id,value){const node=$(id);if(node.textContent!==value)node.textContent=value;}
 function stats(){
@@ -159,9 +159,15 @@ function list(){
  }
 }
 function render(d,navigate=false){recoveryReview=false;$('retry').textContent='다시 저장';$('historyButton').disabled=false;current=d;dirty=false;conflict=null;if($('title').value!==d.title)$('title').value=d.title;if($('body').value!==d.body)$('body').value=d.body;$('empty').hidden=true;$('editor').hidden=false;$('download').disabled=false;$('notice').hidden=true;$('saveStatus').textContent='저장됨';stats();list();$('closeList').hidden=false;if(navigate)showEditor();syncEditingHistory(d.id);}
-async function openDoc(id){if(saving)return;if(dirty&&!await save())return;try{const epoch=editEpoch;const d=await api('/manuscripts/'+id);if(dirty||saving||epoch!==editEpoch)return;render(d,true);}catch(e){notice(e.message);}}
+async function openDoc(id){if(saving)return;if(dirty&&!await save())return;void keepSessionPoint();try{const epoch=editEpoch;const d=await api('/manuscripts/'+id);if(dirty||saving||epoch!==editEpoch)return;render(d,true);void keepSessionPoint();}catch(e){notice(e.message);}}
 function notice(message,isConflict=false){$('noticeText').textContent=message;$('notice').hidden=false;$('useServer').hidden=!isConflict;$('retry').hidden=isConflict;}
 async function save(manual=false){if(recoveryReview&&!manual)return false;clearTimeout(timer);if(!dirty)return true;if(saving)return false;if(conflict)return false;saving=true;const id=current.id,title=$('title').value,body=$('body').value;$('saveStatus').textContent='저장 중…';try{const d=await api('/manuscripts/'+id,'PUT',{title,body,version:current.version});clearSavedDraft(id,title,body);recoveryReview=false;current=d;docs=docs.map(x=>x.id===id?d:x);dirty=$('title').value!==title||$('body').value!==body;if(dirty){persistDraft();scheduleStats();}else{stats();list();}$('notice').hidden=true;$('saveStatus').textContent=dirty?'저장 대기':'저장됨';return !dirty;}catch(e){$('saveStatus').textContent='저장되지 않음';if(e.status===409){conflict=e.value.current;notice('다른 기기에서 원고가 수정되었습니다. 현재 입력은 유지됩니다. 내 원고를 내려받은 뒤 서버 원고를 열어 내용을 비교해 주세요.',true);}else{notice(e.message+' 입력한 내용은 이 화면에 유지됩니다. 다시 저장하거나 내려받아 주세요.');}return false;}finally{saving=false;if(dirty&&!conflict&&!recoveryReview&&$('notice').hidden)timer=setTimeout(save,700);}}
+async function keepSessionPoint(background=false){
+ const id=current?.id;if(!id||!csrf||conflict||recoveryReview||composing)return;
+ if(dirty&&(saving||!await save()))return;
+ if(saving||dirty||current?.id!==id)return;
+ try{await api('/manuscripts/'+id+'/session-checkpoint','POST',{version:current.version},{keepalive:background});}catch{/* A later open or save can retry; local drafts remain available. */}
+}
 function edit(){editEpoch++;dirty=true;persistDraft();scheduleStats();scheduleBodySize();textIfChanged('saveStatus',recoveryReview?'불러온 내용 확인 중 · 서버 저장 전':'저장 대기');clearTimeout(timer);if(!composing&&!recoveryReview)timer=setTimeout(save,700);}
 for(const id of ['title','body']){
  const node=$(id);
@@ -174,7 +180,7 @@ for(const id of ['title','body']){
  node.addEventListener('compositionend',()=>{composing=false;if(editHistory)editHistory.endComposition(editingState(id));historyButtons();edit();});
 }
 document.addEventListener('keydown',e=>{
- if(!current||!editHistory||$('workspace').hidden||$('safetyDialog').open||$('historyDialog').open||$('copyDialog').open||composing||e.isComposing||e.keyCode===229||e.altKey||!(e.ctrlKey||e.metaKey))return;
+ if(!current||!editHistory||$('workspace').hidden||$('safetyDialog').open||$('copyDialog').open||composing||e.isComposing||e.keyCode===229||e.altKey||!(e.ctrlKey||e.metaKey))return;
  if(e.target.matches('input,textarea')&&!['title','body'].includes(e.target.id))return;
  const key=e.key.toLowerCase();if(key==='z'||(key==='y'&&!e.shiftKey)){e.preventDefault();undoEditing(key==='y'||e.shiftKey);}
 });
@@ -220,17 +226,17 @@ $('copyConfirm').onclick=async()=>{
  }catch(e){$('copyMessage').textContent=e.status===409?'다른 기기에서 원고가 수정됐습니다. 창을 닫고 다시 확인해 주세요.':e.message;}
  finally{copyBusy=false;$('copyConfirm').disabled=false;$('copyCancel').disabled=false;}
 };
-async function enter(user){draftEmail=user.email;refreshDraftCount();csrf=user.csrf;$('adminLink').hidden=!user.is_admin;$('accountEmail').textContent=user.email;await refreshDocuments();$('auth').hidden=true;$('workspace').hidden=false;$('download').disabled=true;$('workspace').classList.add('view-list');$('closeList').hidden=true;list();if(docs.length&&!mobileLayout.matches)render(docs[0]);}
+async function enter(user){draftEmail=user.email;refreshDraftCount();csrf=user.csrf;$('adminLink').hidden=!user.is_admin;$('accountEmail').textContent=user.email;await refreshDocuments();$('auth').hidden=true;$('workspace').hidden=false;$('download').disabled=true;$('workspace').classList.add('view-list');$('closeList').hidden=true;list();if(docs.length&&!mobileLayout.matches){render(docs[0]);void keepSessionPoint();}}
 $('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
 $('toggleAuth').onclick=()=>{register=!register;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';};
-$('logout').onclick=async()=>{if(dirty&&!await save())return;try{await api('/logout','POST',{});location.reload();}catch(e){notice(e.message);}};
+$('logout').onclick=async()=>{if(dirty&&!await save())return;await keepSessionPoint();try{await api('/logout','POST',{});location.reload();}catch(e){notice(e.message);}};
 $('newDoc').onclick=$('firstDoc').onclick=newDoc;$('download').onclick=$('backup').onclick=download;$('retry').onclick=()=>save(true);$('useServer').onclick=()=>{persistDraft();if(confirm('서버 원고를 열면 현재 화면의 수정 내용이 교체됩니다. 필요한 내용은 내려받았나요?')){const d=conflict;docs=docs.map(x=>x.id===d.id?d:x);render(d);}};
 $('openList').onclick=showList;$('closeList').onclick=showEditor;
-window.addEventListener('pagehide',()=>{if(dirty)persistDraft();});
-window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&dirty&&!composing)save();});
+window.addEventListener('pagehide',()=>{if(dirty)persistDraft();void keepSessionPoint(true);});
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});document.addEventListener('visibilitychange',()=>{void keepSessionPoint(document.visibilityState==='hidden');});
 let refreshing=false;
 setInterval(async()=>{
- if(dirty||saving||composing||recoveryReview||document.hidden||refreshing||orderBusy||draggedId||$('historyDialog').open||$('copyDialog').open)return;
+ if(dirty||saving||composing||recoveryReview||document.hidden||refreshing||orderBusy||draggedId||$('safetyDialog').open||$('copyDialog').open)return;
  const epoch=editEpoch;
  refreshing=true;
  try{
@@ -261,8 +267,10 @@ window.addEventListener('focus',scheduleDraftCount);
 function refreshDraftCount(){try{const n=availableDrafts().length;$('draftsCount').textContent=n>1?'('+n+')':'';$('recoveryBanner').hidden=!n;}catch{$('recoveryBanner').hidden=true;}}
 
 function clearSavedDraft(id,title,body){try{YeobaekDrafts.clearOwn(draftEmail,id,title,body);if(recoveredDraft&&recoveredDraft.data.id===id){YeobaekDrafts.removeUnchanged(recoveredDraft);recoveredDraft=null;}refreshDraftCount();}catch{}}
-function safetyDialog(heading,help){$('safetyHeading').textContent=heading;$('safetyHelp').textContent=help;$('safetyItems').replaceChildren();if(!$('safetyDialog').open)$('safetyDialog').showModal();}
+let historyEpoch=0,historyRequest=0,historyRestoring=false;
+function safetyDialog(heading,help){historyEpoch++;$('safetyHeading').textContent=heading;$('safetyHelp').textContent=help;$('safetyItems').replaceChildren();if(!$('safetyDialog').open)$('safetyDialog').showModal();}
 $('safetyClose').onclick=()=> $('safetyDialog').close();
+$('safetyDialog').addEventListener('cancel',e=>{if(historyRestoring)e.preventDefault();});
 $('draftsButton').onclick=()=>{refreshDraftCount();safetyDialog('저장되지 않은 글 확인','A와 B를 비교해 선택할 수 있습니다. B를 불러오기만 해서는 서버에 저장되지 않습니다.');try{const items=availableDrafts();if(!items.length){$('safetyHelp').textContent='복구할 글이 없습니다.';refreshDraftCount();return;}for(const item of items){const b=document.createElement('button');b.textContent=(item.data.title||'제목 없는 원고')+' · '+new Date(item.data.time).toLocaleString('ko-KR');b.onclick=()=>compareDraft(item);$('safetyItems').append(b);}if(items.length===1)compareDraft(items[0]);}catch{$('safetyHelp').textContent='기기 보관본에 접근하지 못했습니다.';}};
 async function compareDraft(item){
  if(saving)return;if(dirty&&!await save())return;
@@ -278,72 +286,54 @@ async function compareDraft(item){
  });
  }catch(e){$('safetyHelp').textContent=e.message;}
 }
-const historyDateFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'});
-const historyTimeFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
-const historyClockFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
-let historyId=null,historyBaseVersion=null,historySelected=null,historyEpoch=0,historySelectionEpoch=0,historyBusy=false;
-function historyMessage(message){$('historyMessage').textContent=message;}
-function historyActive(id,epoch){return $('historyDialog').open&&historyId===id&&historyEpoch===epoch;}
-function historyRows(target,rows){
- target.replaceChildren();let previousDay='';
- for(const row of rows){
-  const date=historyDateFormat.format(new Date(row.updated*1000));
-  if(date!==previousDay){const heading=document.createElement('p');heading.className='historyDate';heading.textContent=date;target.append(heading);previousDay=date;}
-  const button=document.createElement('button');button.type='button';button.className='historyRow';button.dataset.version=String(row.version);button.dataset.source=row.source;
-  button.setAttribute('aria-pressed',String(historySelected?.version===row.version&&historySelected?.source===row.source));
-  const title=document.createElement('b');title.textContent=historyClockFormat.format(new Date(row.updated*1000));
-  const detail=document.createElement('small');detail.textContent=[row.label,Number(row.characters).toLocaleString()+'자'].filter(Boolean).join(' · ');
-  button.setAttribute('aria-label',[historyTimeFormat.format(new Date(row.updated*1000)),detail.textContent].join(' · '));
-  button.append(title,detail);button.onclick=()=>void selectHistory(row);target.append(button);
- }
-}
-async function refreshHistory(){
- const id=historyId,epoch=historyEpoch;
- const [points,recent]=await Promise.all([api('/manuscripts/'+id+'/checkpoints'),api('/manuscripts/'+id+'/history')]);
- if(!historyActive(id,epoch))return;
- const saved=new Set(points.map(row=>row.version));
- const rows=[...points.map(row=>({...row,source:'checkpoint'})),...recent.filter(row=>!saved.has(row.version)).map(row=>({...row,source:'recent'}))]
-  .sort((a,b)=>b.updated-a.updated||b.version-a.version);
- historyRows($('historyList'),rows);
- if(!rows.length){const p=document.createElement('p');p.className='historyDate';p.textContent='아직 이전 글이 없습니다.';$('historyList').append(p);}
-}
-async function selectHistory(row){
- const id=historyId,epoch=historyEpoch,selection=++historySelectionEpoch;
- try{
-  const item=await api('/manuscripts/'+id+'/'+(row.source==='checkpoint'?'checkpoints':'history')+'/'+row.version);
-  if(!historyActive(id,epoch)||selection!==historySelectionEpoch)return;
-  historySelected={...item,source:row.source};
-  $('historyOldBody').value=item.body;$('historySelectedMeta').textContent=[row.label,historyTimeFormat.format(new Date(item.updated*1000))].filter(Boolean).join(' · ');
-  $('restoreHistory').disabled=false;
-  for(const button of $('historyDialog').querySelectorAll('.historyRow'))button.setAttribute('aria-pressed',String(button.dataset.version===String(row.version)&&button.dataset.source===row.source));
-  historyMessage('');
- }catch(e){if(historyActive(id,epoch))historyMessage(e.message);}
-}
 $('historyButton').onclick=async()=>{
- if(!current||saving||$('historyDialog').open)return;
+ if(!current||saving||$('safetyDialog').open)return;
  if(dirty&&!await save())return;
- historyId=current.id;historyBaseVersion=current.version;historySelected=null;historyEpoch++;historySelectionEpoch++;
- $('historyOldBody').value='';$('historyCurrentBody').value=$('body').value;
- $('historySelectedMeta').textContent='';$('restoreHistory').disabled=true;
- $('historyList').replaceChildren();
- historyMessage('이전 글을 불러오는 중…');$('historyDialog').showModal();
- try{await refreshHistory();historyMessage('');}
- catch(e){if($('historyDialog').open)historyMessage(e.message);}
-};
-$('historyClose').onclick=()=>{if(!historyBusy)$('historyDialog').close();};
-$('historyDialog').addEventListener('cancel',e=>{if(historyBusy)e.preventDefault();});
-$('historyDialog').addEventListener('close',()=>{historyEpoch++;historySelectionEpoch++;historyId=null;historySelected=null;});
-$('restoreHistory').onclick=async()=>{
- if(historyBusy||!historySelected||!historyId)return;
- const selected=historySelected,id=historyId,epoch=historyEpoch;
- if(!confirm('선택한 버전으로 복원할까요? 현재 글은 “복원 전 글”로 따로 보관됩니다.'))return;
- historyBusy=true;$('restoreHistory').disabled=true;
- try{
-  const saved=await api('/manuscripts/'+id+'/restore','POST',{version:historyBaseVersion,source_version:selected.version});
-  if(!historyActive(id,epoch))return;
-  docs=docs.map(doc=>doc.id===id?saved:doc);render(saved,true);$('historyDialog').close();
- }catch(e){if(historyActive(id,epoch))historyMessage(e.status===409?'다른 기기에서 글이 바뀌었습니다. 복원하지 않았습니다. 창을 닫고 다시 열어 주세요.':e.message);}
- finally{historyBusy=false;if(historyActive(id,epoch))$('restoreHistory').disabled=false;}
+ const id=current.id;
+ safetyDialog('수정 이력','');
+ const epoch=historyEpoch,root=$('safetyItems'),tabs=document.createElement('div'),records=document.createElement('div');
+ tabs.className='historyTabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','수정 이력 종류');
+ records.className='historyRecords';records.setAttribute('role','tabpanel');
+ root.append(tabs,records);
+ const active=()=>historyEpoch===epoch&&$('safetyDialog').open&&current?.id===id;
+ for(const [source,label] of [['recent','최근 수정 이력'],['checkpoint','예전 수정 이력']]){
+  const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('role','tab');
+  button.onclick=()=>void showTab(source);tabs.append(button);
+ }
+ async function restoreRow(row,source){
+  if(historyRestoring||!active()||dirty||saving)return;
+  historyRestoring=true;$('safetyClose').disabled=true;
+  try{
+   const old=await api('/manuscripts/'+id+'/'+(source==='recent'?'history':'checkpoints')+'/'+row.version);
+   if(!active()||dirty||saving)return;
+   if(!confirm('이 버전으로 복원할까요?\n\n'+old.body.slice(0,300)))return;
+   if(!active()||dirty||saving)return;
+   const restored=await api('/manuscripts/'+id+'/restore','POST',{version:current.version,source_version:row.version});
+   if(!active())return;
+   docs=docs.map(doc=>doc.id===id?restored:doc);render(restored,true);$('safetyDialog').close();
+  }catch(e){if(active())$('safetyHelp').textContent=e.status===409?'다른 기기에서 글이 바뀌었습니다. 복원하지 않았습니다. 창을 닫고 다시 열어 주세요.':e.message;}
+  finally{historyRestoring=false;$('safetyClose').disabled=false;}
+ }
+ async function showTab(source){
+  if(!active()||historyRestoring)return;
+  const request=++historyRequest;
+  for(const button of tabs.children)button.setAttribute('aria-selected',String(button.textContent===(source==='recent'?'최근 수정 이력':'예전 수정 이력')));
+  $('safetyHelp').textContent=source==='recent'?'최근 변경 전 원고 50개를 보관합니다. 복원 전 현재 원고도 이력에 남습니다.':'작업을 마치거나 잠시 쉬었다 다시 쓸 때, 집필 중 약 30분마다 남긴 글입니다.';
+  records.replaceChildren();records.textContent='불러오는 중…';
+  try{
+   const rows=await api('/manuscripts/'+id+'/'+(source==='recent'?'history':'checkpoints'));
+   if(!active()||request!==historyRequest)return;
+   records.replaceChildren();
+   if(!rows.length){records.textContent=source==='recent'?'아직 수정 이력이 없습니다.':'아직 예전 수정 이력이 없습니다.';return;}
+   for(const row of rows){
+    const button=document.createElement('button');button.type='button';
+    button.dataset.version=String(row.version);button.dataset.source=source;
+    button.textContent=new Date(row.updated*1000).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+' · '+Number(row.characters).toLocaleString()+'자 · '+(row.label||row.title);
+    button.onclick=()=>void restoreRow(row,source);records.append(button);
+   }
+  }catch(e){if(active()&&request===historyRequest)records.textContent=e.message;}
+ }
+ await showTab('recent');
 };
 
 let recoveryMailMode='id',resetToken=null;

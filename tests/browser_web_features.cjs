@@ -45,6 +45,7 @@ async function fixture(browser,state){
    const created={...copy(source),id:'copy-'+state.docs.length,title:data.title,version:0,updated:Date.now()/1000|0,today:0};
    state.docs.push(created);state.ids.unshift(created.id);return json(created,201);
   }
+  if(/^\/api\/manuscripts\/[^/]+\/session-checkpoint$/.test(url.pathname))return json({version:req.postDataJSON().version,saved:true});
   if(url.pathname.startsWith('/api/manuscripts/')){
    const id=url.pathname.split('/')[3],doc=state.docs.find(d=>d.id===id);
    if(req.method()==='GET')return json(doc);

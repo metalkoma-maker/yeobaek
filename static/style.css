@@ -93,25 +93,7 @@ header .editArrow:hover:not(:disabled){background:#edf2f7}
 .accountDialog{width:min(460px,calc(100% - 24px));max-height:88dvh;overflow:auto;border:1px solid #dce3eb;border-radius:12px;padding:24px;color:#172b44}
 .accountDialog::backdrop{background:#172b4466}.accountDialog h2{margin:0 0 16px;font-size:22px}.accountDialog h3{font-size:17px;margin:22px 0 12px}.accountDialog p{font-size:14px;line-height:1.6;color:#64758b}.accountDialog label{display:block;margin:16px 0 6px;font-size:14px}.accountDialog input{width:100%;padding:11px;border:1px solid #cfd8e3;border-radius:8px}.accountActions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.accountDialog form .primary{margin-top:18px}.accountDialog [role=status]{min-height:22px}.accountDialog details{border-top:1px solid #e1e7ee;margin-top:24px;padding-top:16px}.accountDialog summary{cursor:pointer;color:#9c3131}.accountDialog #deleteAccountSubmit{margin-top:18px;color:#9c3131;border-color:#c77b7b}
 #deleteWarningHeading{color:#9c3131}#deleteWarningConfirm{color:#fff;background:#9c3131;border-color:#9c3131}#deleteWarningConfirm:hover{background:#7e2525}
-#historyDialog{width:min(1100px,calc(100% - 24px));max-height:88dvh;border:1px solid #dce3eb;border-radius:12px;padding:22px;color:#172b44}
-#historyDialog::backdrop{background:#172b4466}
-.historyTop{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
-.historyTop h2{margin:0 0 16px;font-size:22px}
-#historyMessage{margin:8px 0;color:#64758b;font-size:13px}
-#historyMessage:empty{display:none}
-.historyLayout{display:grid;grid-template-columns:minmax(230px,32%) minmax(0,1fr);gap:18px;min-height:0}
-.historyTimeline{align-self:start;max-height:55dvh;overflow:auto;border:1px solid #e1e7ee;border-radius:8px;padding:10px}
-.historyTimeline h3{font-size:15px;margin:5px 7px 12px}
-.historyDate{margin:14px 7px 5px;color:#64758b;font-size:12px;font-weight:600}
-.historyRow{display:block;width:100%;text-align:left;margin:4px 0;padding:10px;border:1px solid transparent}
-.historyRow[aria-pressed="true"]{border-color:#547da8;background:#edf2f7}
-.historyRow b,.historyRow small{display:block;overflow-wrap:anywhere}
-.historyRow small{margin-top:4px;color:#64758b;font-size:12px}
-.historyCompare{min-width:0}
-#historySelectedMeta{margin:4px 0 12px;font-size:14px;color:#64758b}
-#historySelectedMeta:empty{display:none}
-.historyColumns{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.historyColumns label{min-width:0;font-size:13px;color:#64758b}
-.historyColumns textarea{display:block;width:100%;height:min(42dvh,420px);resize:vertical;margin-top:8px;padding:12px;border:1px solid #dce3eb;border-radius:8px;background:#fff;color:#27384c;font-size:14px;line-height:1.7}
-#restoreHistory{margin-top:12px;background:#172b44;color:white;border-color:#172b44}
-@media(max-width:720px){#historyDialog{padding:16px;max-height:94dvh}.historyLayout{grid-template-columns:1fr}.historyTimeline{max-height:25dvh}.historyColumns{grid-template-columns:1fr}.historyColumns textarea{height:18dvh}.historyTop h2{font-size:19px}}
+.historyTabs{display:flex;gap:6px}
+.historyTabs button{flex:1;text-align:center!important;font-size:14px}
+.historyTabs button[aria-selected="true"]{background:#edf2f7;border-color:#547da8}
+.historyRecords{display:grid;gap:8px}

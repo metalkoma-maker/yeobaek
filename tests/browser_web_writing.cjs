@@ -80,20 +80,29 @@ async function performanceCheck(browser,preUndo){
   {
    const {page,context,state}=await fixture(browser);await page.locator('#body').focus();await page.locator('#body').evaluate(b=>b.setSelectionRange(700,705));await page.keyboard.press('Backspace');assert.equal((await page.inputValue('#body')).length,1495);await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),full);assert.deepEqual(await page.locator('#body').evaluate(b=>[b.selectionStart,b.selectionEnd]),[700,705]);await saved(page);
    state.checkpoints.push({...state.history[0],kind:'manual',label:'중요한 초고'});
-   await page.click('#historyButton');await page.locator('#historyDialog').waitFor({state:'visible'});
-   await page.locator('#historyList .historyRow[data-version="0"]').waitFor({state:'visible'});
-   assert.equal(await page.locator('#historyList .historyRow[data-version="0"]').count(),1);
-   assert.match(await page.locator('#historyList').innerText(),/중요한 초고/);
-   assert.equal(await page.locator('.historyPin').count(),0);
-   await page.locator('#historyList .historyRow[data-version="0"]').click();
-   await page.waitForFunction(()=>document.querySelector('#historyOldBody').value==='가짜 이전 글');
-   page.once('dialog',d=>d.accept());await page.click('#restoreHistory');
+   await page.click('#historyButton');await page.locator('#safetyDialog').waitFor({state:'visible'});
+   assert.equal(await page.getByRole('tab',{name:'최근 수정 이력'}).getAttribute('aria-selected'),'true');
+   await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
+   await page.getByRole('tab',{name:'예전 수정 이력'}).click();
+   await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
+   assert.match(await page.locator('.historyRecords').innerText(),/중요한 초고/);
+   page.once('dialog',d=>{assert.match(d.message(),/가짜 이전 글/);void d.accept();});
+   await page.locator('.historyRecords button[data-version="0"]').click();
    await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');
    assert.equal(state.doc.body,'가짜 이전 글');assert.equal(state.restores.length,1);
    assert.equal(state.checkpoints.find(point=>point.kind==='before_restore').body,full);
    assert.equal(await page.locator('#undoEdit').isDisabled(),true);
    await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');
-   console.log('PASS: unified history keeps existing named point and atomically restores a version');await context.close();
+   console.log('PASS: recent/older tabs use the production list and confirmation while preserving atomic restore');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   await page.locator('#body').fill('가짜 세션 종료');await saved(page);
+   const response=page.waitForResponse(r=>r.url().endsWith('/session-checkpoint')&&r.request().method()==='POST');
+   await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+   assert.equal((await response).status(),200);
+   assert.equal(state.sessionPoints.at(-1).version,state.doc.version);
+   console.log('PASS: leaving the web requests a checkpoint of the saved manuscript');await context.close();
   }
   {
    const {page,context,state}=await fixture(browser);

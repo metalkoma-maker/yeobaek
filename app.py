@@ -12,6 +12,7 @@ DB = os.environ.get('DATABASE_PATH', 'data/novel.sqlite3')
 SECURE = os.environ.get('COOKIE_SECURE', '0') == '1'
 SEOUL = ZoneInfo('Asia/Seoul')
 CHECKPOINT_INTERVAL = 30 * 60
+RESUME_INTERVAL = 10 * 60
 RESET_LIFETIME = 30 * 60
 
 def db():
@@ -320,7 +321,7 @@ def prune_checkpoints(mid, now):
 def automatic_checkpoint(mid, row, now):
     if row['version']<1: return
     latest=db().execute('SELECT max(created) FROM manuscript_checkpoints WHERE manuscript_id=?',(mid,)).fetchone()[0]
-    if latest is None or now-latest>=CHECKPOINT_INTERVAL or now-row['updated']>=CHECKPOINT_INTERVAL:
+    if latest is None or now-latest>=CHECKPOINT_INTERVAL or now-row['updated']>=RESUME_INTERVAL:
         checkpoint(mid,row,'auto',now)
         prune_checkpoints(mid,now)
 
@@ -456,6 +457,23 @@ def checkpoints(mid):
     checkpoint(mid,source,'manual',int(time.time()),label.strip())
     db().commit()
     return jsonify(version=version,label=label.strip(),kind='manual')
+
+@app.post('/api/manuscripts/<mid>/session-checkpoint')
+def session_checkpoint(mid):
+    data=request.get_json() or {}
+    version=data.get('version')
+    if type(version) is not int or version<0: return fail('원고 버전을 확인해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    current=owned(mid)
+    if not current: db().rollback(); return fail('원고를 찾을 수 없습니다.',404)
+    if current['version']!=version:
+        result=pack(current); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
+    if version:
+        now=int(time.time())
+        checkpoint(mid,current,'auto',now)
+        prune_checkpoints(mid,now)
+    db().commit()
+    return jsonify(version=version,saved=bool(version))
 
 @app.get('/api/manuscripts/<mid>/checkpoints/<int:version>')
 def checkpoint_item(mid,version):

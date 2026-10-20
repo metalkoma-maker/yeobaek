@@ -44,7 +44,7 @@ async function fixture(browser, before = false, options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1280, height: 800 }, serviceWorkers: 'block' });
   await context.addInitScript(instrument);
   const page = await context.newPage();
-  const state = { doc: seed(), puts: [], gets: 0, fail: false, holdGet: null, holdPut: null, history: [{...seed(),version:0,title:'이전 가짜 제목',body:'가짜 이전 글'}], checkpoints: [], restores: [] };
+  const state = { doc: seed(), puts: [], gets: 0, fail: false, holdGet: null, holdPut: null, history: [{...seed(),version:0,title:'이전 가짜 제목',body:'가짜 이전 글'}], checkpoints: [], restores: [], sessionPoints: [] };
   await page.route('http://127.0.0.1:8765/**', async route => {
     const req = route.request(), url = new URL(req.url());
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
@@ -74,6 +74,13 @@ async function fixture(browser, before = false, options = {}) {
       state.checkpoints=state.checkpoints.filter(d=>d.version!==data.version);
       state.checkpoints.push({...copy(source),kind:'manual',label:data.label});
       return json({version:data.version,kind:'manual',label:data.label});
+    }
+    if (url.pathname === '/api/manuscripts/synthetic/session-checkpoint') {
+      const data=req.postDataJSON();state.sessionPoints.push(data);
+      if(data.version!==state.doc.version)return json({error:'가짜 동시 수정',current:state.doc},409);
+      state.checkpoints=state.checkpoints.filter(d=>d.version!==data.version);
+      state.checkpoints.push({...copy(state.doc),kind:'auto',label:''});
+      return json({version:data.version,saved:true});
     }
     if (url.pathname.startsWith('/api/manuscripts/synthetic/checkpoints/')) return json(state.checkpoints.find(d=>d.version===Number(url.pathname.split('/').at(-1))));
     if (url.pathname === '/api/manuscripts/synthetic/restore') {

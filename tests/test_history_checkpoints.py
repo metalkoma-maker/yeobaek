@@ -145,6 +145,45 @@ class HistoryCheckpointTest(unittest.TestCase):
         points = client.get(route + '/checkpoints').json
         self.assertEqual([(row['version'], row['kind']) for row in points], [(2, 'auto'), (1, 'manual')])
 
+    def test_session_checkpoint_is_idempotent_private_and_keeps_recent_fifty(self):
+        client, headers = self.account('history-session')
+        foreign, foreign_headers = self.account('history-session-foreign')
+        route = self.create(client, headers)
+        self.write(client, headers, route, 0, '저장된 글')
+        path = route + '/session-checkpoint'
+        self.assertEqual(client.post(path, json={'version': 1}).status_code, 403)
+        self.assertEqual(foreign.post(path, json={'version': 1}, headers=foreign_headers).status_code, 404)
+        self.assertEqual(client.post(path, json={'version': True}, headers=headers).status_code, 400)
+        self.assertEqual(client.post(path, json={'version': 0}, headers=headers).status_code, 409)
+        for _ in range(2):
+            point = client.post(path, json={'version': 1}, headers=headers)
+            self.assertEqual(point.status_code, 200)
+        points = client.get(route + '/checkpoints').json
+        self.assertEqual([row['version'] for row in points], [1])
+        self.assertEqual(client.get(route + '/checkpoints/1').json['body'], '저장된 글')
+        self.assertEqual([row['version'] for row in client.get(route + '/history').json], [0])
+
+    def test_resume_after_ten_minute_pause_creates_point_before_next_edit(self):
+        client, headers = self.account('history-resume')
+        route = self.create(client, headers)
+        start = int(module.time.time())
+        with patch.object(module.time, 'time', return_value=start):
+            self.write(client, headers, route, 0, '첫 문장')
+            self.write(client, headers, route, 1, '쉬기 전 글')
+        with patch.object(module.time, 'time', return_value=start + module.RESUME_INTERVAL + 1):
+            self.write(client, headers, route, 2, '다시 쓴 글')
+        self.assertEqual(client.get(route + '/checkpoints/2').json['body'], '쉬기 전 글')
+
+    def test_continuous_writing_creates_a_point_after_about_thirty_minutes(self):
+        client, headers = self.account('history-continuous')
+        route = self.create(client, headers)
+        start = int(module.time.time())
+        for minute in range(32):
+            with patch.object(module.time, 'time', return_value=start + minute * 60):
+                self.write(client, headers, route, minute, '글 ' + str(minute))
+        versions = [row['version'] for row in client.get(route + '/checkpoints').json]
+        self.assertEqual(versions, [31, 1])
+
     def test_automatic_cleanup_keeps_daily_and_monthly_recovery_points(self):
         client, headers = self.account('history-retention')
         route = self.create(client, headers)
