@@ -93,6 +93,8 @@ async function dragBefore(page,from,to){
    await page.locator('[data-id="a"] + .documentMore').click();
    await page.locator('#copyDialog').waitFor({state:'visible'});
    assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 2고');
+   assert.equal(await page.locator('#copyMessage').textContent(),'');
+   assert.equal(await page.locator('#copyMessage').isVisible(),false);
    assert.doesNotMatch(await page.locator('#copyDialog').innerText(),/3교를 시작할 때/);
    await page.locator('#copyConfirm').click();
    await page.waitForFunction(()=>current.id==='copy-3');

@@ -201,7 +201,7 @@ async function openCopyDialog(id){
  try{
   const source=await api('/manuscripts/'+id);
   if(dirty||saving)return;
-  copySource=source;$('copyTitle').value=suggestedCopyTitle(source);$('copyMessage').textContent='원본은 그대로 남고 사본은 별도 원고가 됩니다.';
+  copySource=source;$('copyTitle').value=suggestedCopyTitle(source);$('copyMessage').textContent='';
   $('copyDialog').showModal();$('copyTitle').focus();$('copyTitle').select();
  }catch(e){notice(e.message);}
 }
