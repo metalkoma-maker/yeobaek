@@ -96,24 +96,20 @@ header .editArrow:hover:not(:disabled){background:#edf2f7}
 #historyDialog{width:min(1100px,calc(100% - 24px));max-height:88dvh;border:1px solid #dce3eb;border-radius:12px;padding:22px;color:#172b44}
 #historyDialog::backdrop{background:#172b4466}
 .historyTop{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
-.historyTop h2{margin:0 0 8px;font-size:22px}
-.historyTop p{margin:0 0 16px;line-height:1.6;color:#64758b;font-size:14px}
-.historyPin{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px}
-.historyPin label{font-size:13px;color:#64758b}
-.historyPin input{min-width:160px;flex:1;padding:9px 12px;border:1px solid #dce3eb;border-radius:8px}
-#historyMessage{min-height:22px;margin:8px 0;color:#64758b;font-size:13px}
+.historyTop h2{margin:0 0 16px;font-size:22px}
+#historyMessage{margin:8px 0;color:#64758b;font-size:13px}
+#historyMessage:empty{display:none}
 .historyLayout{display:grid;grid-template-columns:minmax(230px,32%) minmax(0,1fr);gap:18px;min-height:0}
-.historyTimeline{max-height:55dvh;overflow:auto;border:1px solid #e1e7ee;border-radius:8px;padding:10px}
+.historyTimeline{align-self:start;max-height:55dvh;overflow:auto;border:1px solid #e1e7ee;border-radius:8px;padding:10px}
 .historyTimeline h3{font-size:15px;margin:5px 7px 12px}
 .historyDate{margin:14px 7px 5px;color:#64758b;font-size:12px;font-weight:600}
 .historyRow{display:block;width:100%;text-align:left;margin:4px 0;padding:10px;border:1px solid transparent}
 .historyRow[aria-pressed="true"]{border-color:#547da8;background:#edf2f7}
 .historyRow b,.historyRow small{display:block;overflow-wrap:anywhere}
 .historyRow small{margin-top:4px;color:#64758b;font-size:12px}
-#recentHistory{border-top:1px solid #e1e7ee;margin-top:14px;padding:12px 7px}
-#recentHistory summary{cursor:pointer;font-size:14px}
 .historyCompare{min-width:0}
-#historySelectedMeta{min-height:24px;margin:4px 0 12px;font-size:14px;color:#64758b}
+#historySelectedMeta{margin:4px 0 12px;font-size:14px;color:#64758b}
+#historySelectedMeta:empty{display:none}
 .historyColumns{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .historyColumns label{min-width:0;font-size:13px;color:#64758b}
 .historyColumns textarea{display:block;width:100%;height:min(42dvh,420px);resize:vertical;margin-top:8px;padding:12px;border:1px solid #dce3eb;border-radius:8px;background:#fff;color:#27384c;font-size:14px;line-height:1.7}

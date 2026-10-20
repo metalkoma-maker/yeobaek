@@ -280,71 +280,59 @@ async function compareDraft(item){
 }
 const historyDateFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'});
 const historyTimeFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+const historyClockFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
 let historyId=null,historyBaseVersion=null,historySelected=null,historyEpoch=0,historySelectionEpoch=0,historyBusy=false;
 function historyMessage(message){$('historyMessage').textContent=message;}
 function historyActive(id,epoch){return $('historyDialog').open&&historyId===id&&historyEpoch===epoch;}
-function historyRows(target,rows,source){
+function historyRows(target,rows){
  target.replaceChildren();let previousDay='';
  for(const row of rows){
   const date=historyDateFormat.format(new Date(row.updated*1000));
   if(date!==previousDay){const heading=document.createElement('p');heading.className='historyDate';heading.textContent=date;target.append(heading);previousDay=date;}
-  const button=document.createElement('button');button.type='button';button.className='historyRow';button.dataset.version=String(row.version);button.dataset.source=source;
-  button.setAttribute('aria-pressed',String(historySelected?.version===row.version&&historySelected?.source===source));
-  const title=document.createElement('b');title.textContent=row.label||row.title||'제목 없는 원고';
-  const detail=document.createElement('small');detail.textContent=historyTimeFormat.format(new Date(row.updated*1000))+' · '+Number(row.characters).toLocaleString()+'자'+(row.kind==='manual'?' · 중요 보관':row.kind==='before_restore'?' · 복원 전':'');
-  button.append(title,detail);button.onclick=()=>void selectHistory(row,source);target.append(button);
+  const button=document.createElement('button');button.type='button';button.className='historyRow';button.dataset.version=String(row.version);button.dataset.source=row.source;
+  button.setAttribute('aria-pressed',String(historySelected?.version===row.version&&historySelected?.source===row.source));
+  const title=document.createElement('b');title.textContent=historyClockFormat.format(new Date(row.updated*1000));
+  const detail=document.createElement('small');detail.textContent=[row.label,Number(row.characters).toLocaleString()+'자'].filter(Boolean).join(' · ');
+  button.setAttribute('aria-label',[historyTimeFormat.format(new Date(row.updated*1000)),detail.textContent].join(' · '));
+  button.append(title,detail);button.onclick=()=>void selectHistory(row);target.append(button);
  }
 }
-async function refreshHistory(preferred){
+async function refreshHistory(){
  const id=historyId,epoch=historyEpoch;
  const [points,recent]=await Promise.all([api('/manuscripts/'+id+'/checkpoints'),api('/manuscripts/'+id+'/history')]);
  if(!historyActive(id,epoch))return;
- const saved=new Set(points.map(row=>row.version)),other=recent.filter(row=>!saved.has(row.version));
- historyRows($('checkpointList'),points,'checkpoint');historyRows($('recentHistoryList'),other,'recent');
- $('recentHistoryCount').textContent='('+other.length+'개)';
- if(!points.length){const p=document.createElement('p');p.className='historyDate';p.textContent='아직 복원 지점이 없습니다. 현재 글을 중요 버전으로 보관할 수 있습니다.';$('checkpointList').append(p);}
- const found=preferred&&(points.find(row=>row.version===preferred.version)||other.find(row=>row.version===preferred.version));
- if(found)await selectHistory(found,saved.has(found.version)?'checkpoint':'recent');
+ const saved=new Set(points.map(row=>row.version));
+ const rows=[...points.map(row=>({...row,source:'checkpoint'})),...recent.filter(row=>!saved.has(row.version)).map(row=>({...row,source:'recent'}))]
+  .sort((a,b)=>b.updated-a.updated||b.version-a.version);
+ historyRows($('historyList'),rows);
+ if(!rows.length){const p=document.createElement('p');p.className='historyDate';p.textContent='아직 이전 글이 없습니다.';$('historyList').append(p);}
 }
-async function selectHistory(row,source){
+async function selectHistory(row){
  const id=historyId,epoch=historyEpoch,selection=++historySelectionEpoch;
  try{
-  const item=await api('/manuscripts/'+id+'/'+(source==='checkpoint'?'checkpoints':'history')+'/'+row.version);
+  const item=await api('/manuscripts/'+id+'/'+(row.source==='checkpoint'?'checkpoints':'history')+'/'+row.version);
   if(!historyActive(id,epoch)||selection!==historySelectionEpoch)return;
-  historySelected={...item,source};
-  $('historyOldBody').value=item.body;$('historySelectedMeta').textContent=(row.label||item.title||'제목 없는 원고')+' · '+historyTimeFormat.format(new Date(item.updated*1000))+' · 버전 '+item.version;
-  $('pinSelected').disabled=false;$('restoreHistory').disabled=false;
-  for(const button of $('historyDialog').querySelectorAll('.historyRow'))button.setAttribute('aria-pressed',String(button.dataset.version===String(row.version)&&button.dataset.source===source));
-  historyMessage('선택한 버전과 현재 글을 비교한 뒤 복원할 수 있습니다.');
+  historySelected={...item,source:row.source};
+  $('historyOldBody').value=item.body;$('historySelectedMeta').textContent=[row.label,historyTimeFormat.format(new Date(item.updated*1000))].filter(Boolean).join(' · ');
+  $('restoreHistory').disabled=false;
+  for(const button of $('historyDialog').querySelectorAll('.historyRow'))button.setAttribute('aria-pressed',String(button.dataset.version===String(row.version)&&button.dataset.source===row.source));
+  historyMessage('');
  }catch(e){if(historyActive(id,epoch))historyMessage(e.message);}
-}
-async function pinHistory(version,expectedCurrent=false){
- if(historyBusy||!historyId)return;
- const id=historyId,epoch=historyEpoch,label=$('historyLabel').value.trim()||'중요한 버전';
- historyBusy=true;
- try{
-  await api('/manuscripts/'+id+'/checkpoints','POST',{version,label,...(expectedCurrent?{expected_current_version:historyBaseVersion}:{})});
-  if(!historyActive(id,epoch))return;
-  await refreshHistory({version});historyMessage('중요한 버전으로 보관했습니다. 자동 정리에서 제외됩니다.');
- }catch(e){if(historyActive(id,epoch))historyMessage(e.status===409?'다른 기기에서 글이 바뀌었습니다. 이 창을 닫고 다시 열어 주세요.':e.message);}
- finally{historyBusy=false;}
 }
 $('historyButton').onclick=async()=>{
  if(!current||saving||$('historyDialog').open)return;
  if(dirty&&!await save())return;
  historyId=current.id;historyBaseVersion=current.version;historySelected=null;historyEpoch++;historySelectionEpoch++;
  $('historyOldBody').value='';$('historyCurrentBody').value=$('body').value;
- $('historySelectedMeta').textContent='왼쪽에서 버전을 선택하세요.';$('historyLabel').value='';$('pinSelected').disabled=true;$('restoreHistory').disabled=true;
- $('checkpointList').replaceChildren();$('recentHistoryList').replaceChildren();$('recentHistory').open=false;
- historyMessage('복원 지점을 불러오는 중…');$('historyDialog').showModal();
- try{await refreshHistory();if(!$('checkpointList').children.length&&!$('recentHistoryList').children.length)historyMessage('아직 이전 버전이 없습니다.');else historyMessage('복원 지점이나 최근 자동저장을 선택해 비교하세요.');}
+ $('historySelectedMeta').textContent='';$('restoreHistory').disabled=true;
+ $('historyList').replaceChildren();
+ historyMessage('이전 글을 불러오는 중…');$('historyDialog').showModal();
+ try{await refreshHistory();historyMessage('');}
  catch(e){if($('historyDialog').open)historyMessage(e.message);}
 };
 $('historyClose').onclick=()=>{if(!historyBusy)$('historyDialog').close();};
 $('historyDialog').addEventListener('cancel',e=>{if(historyBusy)e.preventDefault();});
 $('historyDialog').addEventListener('close',()=>{historyEpoch++;historySelectionEpoch++;historyId=null;historySelected=null;});
-$('pinCurrent').onclick=()=>void pinHistory(historyBaseVersion,true);
-$('pinSelected').onclick=()=>{if(historySelected)void pinHistory(historySelected.version);};
 $('restoreHistory').onclick=async()=>{
  if(historyBusy||!historySelected||!historyId)return;
  const selected=historySelected,id=historyId,epoch=historyEpoch;
