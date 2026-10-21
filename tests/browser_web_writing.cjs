@@ -80,12 +80,17 @@ async function performanceCheck(browser,preUndo){
   {
    const {page,context,state}=await fixture(browser);await page.locator('#body').focus();await page.locator('#body').evaluate(b=>b.setSelectionRange(700,705));await page.keyboard.press('Backspace');assert.equal((await page.inputValue('#body')).length,1495);await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),full);assert.deepEqual(await page.locator('#body').evaluate(b=>[b.selectionStart,b.selectionEnd]),[700,705]);await saved(page);
    state.checkpoints.push({...state.history[0],kind:'manual',label:'중요한 초고'});
+   state.checkpoints.push({...state.history[0],version:22,title:'가짜 기존 기록',kind:'legacy',label:'기존 수정 이력'});
    await page.click('#historyButton');await page.locator('#safetyDialog').waitFor({state:'visible'});
    assert.equal(await page.getByRole('tab',{name:'최근 수정 이력'}).getAttribute('aria-selected'),'true');
    await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
    await page.getByRole('tab',{name:'예전 수정 이력'}).click();
    await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
    assert.match(await page.locator('.historyRecords').innerText(),/중요한 초고/);
+   assert.equal(await page.locator('.historyRecords > button').count(),1);
+   assert.equal(await page.locator('.historyArchive button').isVisible(),false);
+   await page.locator('.historyArchive summary').click();
+   assert.equal(await page.locator('.historyArchive button').isVisible(),true);
    page.once('dialog',d=>{assert.match(d.message(),/가짜 이전 글/);void d.accept();});
    await page.locator('.historyRecords button[data-version="0"]').click();
    await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');
@@ -97,6 +102,7 @@ async function performanceCheck(browser,preUndo){
   }
   {
    const {page,context,state}=await fixture(browser);
+   assert.equal(state.sessionPoints.length,0,'opening the editor must not create an old-history entry');
    await page.locator('#body').fill('가짜 세션 종료');await saved(page);
    const response=page.waitForResponse(r=>r.url().endsWith('/session-checkpoint')&&r.request().method()==='POST');
    await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
