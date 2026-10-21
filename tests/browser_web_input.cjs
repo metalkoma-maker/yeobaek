@@ -66,7 +66,7 @@ async function fixture(browser, before = false, options = {}) {
       return json(state.doc);
     }
     if (url.pathname === '/api/manuscripts/synthetic/checkpoints') {
-      if (req.method() === 'GET') return json(state.checkpoints.map(d=>({version:d.version,title:d.title,updated:d.updated,created:d.updated,kind:d.kind,label:d.label,characters:d.body.length})));
+      if (req.method() === 'GET') return json(state.checkpoints.map(d=>({version:d.version,title:d.title,updated:d.updated,created:d.created??d.updated,kind:d.kind,label:d.label,characters:d.body.length})));
       const data=req.postDataJSON();
       if(data.expected_current_version!==undefined&&data.expected_current_version!==state.doc.version)return json({error:'가짜 동시 수정',current:state.doc},409);
       const source=state.doc.version===data.version?state.doc:state.checkpoints.find(d=>d.version===data.version)||state.history.find(d=>d.version===data.version);
