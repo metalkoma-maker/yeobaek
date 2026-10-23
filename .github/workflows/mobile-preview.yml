@@ -1,0 +1,108 @@
+name: 소설여백 아이폰 임시 검토 주소
+on:
+  push:
+    branches:
+      - 'mobile-preview/run-*'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'tools/run_mobile_test.py'
+      - 'tools/mobile_test_proxy.py'
+      - 'tools/start_mobile_preview_tunnel.py'
+      - '.github/workflows/mobile-preview.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: mobile-preview-${{ github.event.pull_request.number || 'manual' }}
+  cancel-in-progress: true
+jobs:
+  preview:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 125
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: 가짜 데이터 실행 준비
+        run: |
+          python3 -m venv "$RUNNER_TEMP/mobile-venv"
+          "$RUNNER_TEMP/mobile-venv/bin/pip" install -r requirements.txt
+          npm --prefix mobile ci --ignore-scripts --no-audit --no-fund
+      - name: 임시 아이폰 검토 주소 시작
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${EXPO_TOKEN:-}" ]]; then
+            echo '::error::EXPO_TOKEN repository secret is required for iPhone Expo Go previews.'
+            exit 1
+          fi
+          expo_actor=$(cd mobile && ./node_modules/.bin/expo whoami)
+          if [[ -z "$expo_actor" || "$expo_actor" == 'Not logged in' ]]; then
+            echo '::error::EXPO_TOKEN did not authenticate Expo CLI.'
+            exit 1
+          fi
+          echo "Expo CLI account: $expo_actor"
+          "$RUNNER_TEMP/mobile-venv/bin/python" -u tools/start_mobile_preview_tunnel.py > "$RUNNER_TEMP/mobile-preview.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/mobile-preview.pid"
+          for attempt in $(seq 1 180); do
+            if grep -q '^MOBILE_PREVIEW_URL=' "$RUNNER_TEMP/mobile-preview.log"; then
+              grep -E '^(MOBILE_PREVIEW_URL|MOBILE_EXPO_URL|EXPO_AUTH_CONFIGURED)=' "$RUNNER_TEMP/mobile-preview.log" > "$RUNNER_TEMP/mobile-preview-url.txt"
+              cat "$RUNNER_TEMP/mobile-preview-url.txt"
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/mobile-preview.pid")" 2>/dev/null; then
+              tail -30 "$RUNNER_TEMP/mobile-preview.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          tail -30 "$RUNNER_TEMP/mobile-preview.log"
+          exit 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-preview-url
+          path: ${{ runner.temp }}/mobile-preview-url.txt
+          retention-days: 1
+          if-no-files-found: error
+      - name: 검토 주소 유지
+        run: |
+          set -euo pipefail
+          preview_pid=$(cat "$RUNNER_TEMP/mobile-preview.pid")
+          started=$SECONDS
+          while kill -0 "$preview_pid" 2>/dev/null; do sleep 5; done
+          if (( SECONDS - started < 6800 )); then
+            tail -30 "$RUNNER_TEMP/mobile-preview.log"
+            exit 1
+          fi
+  report:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: 임시 검토 주소 기록
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 180); do
+            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == "mobile-preview-url")] | length')
+            if [[ "$count" == 1 ]]; then break; fi
+            preview_failed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '[.jobs[] | select(.name == "preview" and .status == "completed" and .conclusion != "success")] | length')
+            if [[ "$preview_failed" != 0 ]]; then
+              echo '::error::The preview job ended without a review URL.'
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$count" == 1
+          gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n mobile-preview-url -D "$RUNNER_TEMP/mobile-preview-link"
+          echo 'MOBILE_PREVIEW_URL='
+          cat "$RUNNER_TEMP/mobile-preview-link/mobile-preview-url.txt"
