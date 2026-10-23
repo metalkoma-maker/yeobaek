@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let csrf='',docs=[],current=null,dirty=false,timer=null,saving=false,conflict=null,register=false,composing=false;
+let csrf='',docs=[],current=null,dirty=false,timer=null,saving=false,conflict=null,register=false,composing=false,passwordRecoveryAvailable=false;
 const mobileLayout=window.matchMedia('(max-width:720px)');
 const modifiedFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 function modifiedDate(value){const date=new Date(Number(value)*1000);return value!=null&&Number.isFinite(date.getTime())?'최근 수정 '+modifiedFormat.format(date):'최근 수정일 없음';}
@@ -228,7 +228,8 @@ $('copyConfirm').onclick=async()=>{
 };
 async function enter(user){draftEmail=user.email;refreshDraftCount();csrf=user.csrf;$('adminLink').hidden=!user.is_admin;$('accountEmail').textContent=user.email;await refreshDocuments();$('auth').hidden=true;$('workspace').hidden=false;$('download').disabled=true;$('workspace').classList.add('view-list');$('closeList').hidden=true;list();if(docs.length&&!mobileLayout.matches)render(docs[0]);}
 $('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
-$('toggleAuth').onclick=()=>{register=!register;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';};
+function updatePasswordRecoveryLink(){$('forgotPassword').hidden=register||!passwordRecoveryAvailable;}
+$('toggleAuth').onclick=()=>{register=!register;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';updatePasswordRecoveryLink();};
 $('logout').onclick=async()=>{if(dirty&&!await save())return;await keepSessionPoint();try{await api('/logout','POST',{});location.reload();}catch(e){notice(e.message);}};
 $('newDoc').onclick=$('firstDoc').onclick=newDoc;$('download').onclick=$('backup').onclick=download;$('retry').onclick=()=>save(true);$('useServer').onclick=()=>{persistDraft();if(confirm('서버 원고를 열면 현재 화면의 수정 내용이 교체됩니다. 필요한 내용은 내려받았나요?')){const d=conflict;docs=docs.map(x=>x.id===d.id?d:x);render(d);}};
 $('openList').onclick=showList;$('closeList').onclick=showEditor;
@@ -252,6 +253,7 @@ setInterval(async()=>{
  }catch{}finally{refreshing=false;}
 },10000);
 api('/me').then(enter).catch(e=>{if(e.status!==401)$('authError').textContent='서버에 연결하지 못했습니다. 잠시 후 새로고침해 주세요.';});
+api('/password-reset/availability').then(result=>{passwordRecoveryAvailable=result.available===true;updatePasswordRecoveryLink();}).catch(()=>{});
 if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 
 let draftEmail='',editEpoch=0,recoveredDraft=null,recoveryReview=false;const dismissedDrafts=new Set();

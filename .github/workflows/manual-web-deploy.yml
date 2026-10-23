@@ -54,6 +54,7 @@ jobs:
           node tests/browser_web_input.cjs
           node tests/browser_web_writing.cjs
           node tests/browser_web_features.cjs
+          node tests/browser_accounts.cjs
   production:
     needs: verify
     runs-on: ubuntu-24.04
