@@ -89,7 +89,7 @@ class HistoryCheckpointTest(unittest.TestCase):
             'version': 3, 'expected_current_version': 2,
         }, headers=headers).status_code, 409)
 
-    def test_existing_history_is_copied_once_and_does_not_change_original_rows(self):
+    def test_existing_history_stays_in_recent_list_without_creating_legacy_points(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, 'old.sqlite3')
             connection = sqlite3.connect(path)
@@ -115,7 +115,7 @@ class HistoryCheckpointTest(unittest.TestCase):
                 with sqlite3.connect(path) as connection:
                     point = connection.execute("SELECT kind,label,body FROM manuscript_checkpoints WHERE manuscript_id='m'").fetchall()
                     original = connection.execute("SELECT body FROM manuscript_history WHERE manuscript_id='m'").fetchall()
-                    self.assertEqual(point, [('legacy', '기존 수정 이력', '옛 글')])
+                    self.assertEqual(point, [])
                     self.assertEqual(original, [('옛 글',)])
                     self.assertEqual(connection.execute('SELECT COUNT(*) FROM schema_migrations').fetchone()[0], 2)
                     self.assertEqual(connection.execute('SELECT delta FROM daily').fetchone()[0], 7)
@@ -126,6 +126,24 @@ class HistoryCheckpointTest(unittest.TestCase):
                     self.assertEqual(module.db().execute("SELECT delta FROM daily WHERE manuscript_id='m'").fetchone()[0],9)
             finally:
                 module.DB = old_path
+
+    def test_previously_imported_points_are_hidden_but_not_deleted(self):
+        client, headers = self.account('history-legacy-hidden')
+        route = self.create(client, headers)
+        self.write(client, headers, route, 0, '현재 글')
+        mid = route.split('/')[-1]
+        with module.app.app_context():
+            module.db().execute('INSERT INTO manuscript_checkpoints VALUES(?,?,?,?,?,?,?,?)',
+                                (mid, 99, '가짜 이전 제목', '가짜 이전 글', 1, 1, 'legacy', '기존 수정 이력'))
+            module.db().commit()
+        self.assertEqual(client.get(route + '/checkpoints').json, [])
+        self.assertEqual(client.get(route + '/checkpoints/99').status_code, 404)
+        self.assertEqual(client.post(route + '/checkpoints', json={'version': 99, 'label': '가짜'}, headers=headers).status_code, 404)
+        self.assertEqual(client.post(route + '/restore', json={'version': 1, 'source_version': 99}, headers=headers).status_code, 404)
+        self.assertEqual(client.get(route + '/history').json[0]['version'], 0)
+        with module.app.app_context():
+            self.assertEqual(module.db().execute('SELECT body FROM manuscript_checkpoints WHERE manuscript_id=? AND version=99',
+                                                 (mid,)).fetchone()[0], '가짜 이전 글')
 
     def test_automatic_point_after_pause_and_explicit_point_survives_cleanup(self):
         client, headers = self.account('history-pause')

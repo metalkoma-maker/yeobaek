@@ -42,12 +42,10 @@ def init():
         CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,started INTEGER NOT NULL,count INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS password_resets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
         ''')
-        # Existing recent history must survive the new rolling-history policy.
-        # Copy it once in one transaction, without changing manuscripts or history.
+        # Existing recent history stays in manuscript_history. Older imported
+        # copies, if present from a previous release, are left untouched.
         db().execute('BEGIN IMMEDIATE')
         if not db().execute("SELECT 1 FROM schema_migrations WHERE name='history_checkpoints_v1'").fetchone():
-            db().execute('''INSERT OR IGNORE INTO manuscript_checkpoints(manuscript_id,version,title,body,updated,created,kind,label)
-                SELECT manuscript_id,version,title,body,updated,updated,'legacy','기존 수정 이력' FROM manuscript_history''')
             db().execute("INSERT INTO schema_migrations VALUES('history_checkpoints_v1',?)",(int(time.time()),))
         if not db().execute("SELECT 1 FROM schema_migrations WHERE name='count_spaces_v1'").fetchone():
             today=datetime.now(SEOUL).date()
@@ -440,7 +438,7 @@ def history_item(mid,version):
 def checkpoints(mid):
     if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
     if request.method=='GET':
-        rows=db().execute(f'SELECT version,title,updated,created,kind,label,{COUNT_BODY_SQL} AS characters FROM manuscript_checkpoints WHERE manuscript_id=? ORDER BY updated DESC,version DESC',(mid,)).fetchall()
+        rows=db().execute(f"SELECT version,title,updated,created,kind,label,{COUNT_BODY_SQL} AS characters FROM manuscript_checkpoints WHERE manuscript_id=? AND kind!='legacy' ORDER BY created DESC,version DESC",(mid,)).fetchall()
         return jsonify([dict(row) for row in rows])
     data=request.get_json() or {}
     version=data.get('version'); label=data.get('label','중요한 버전'); expected=data.get('expected_current_version')
@@ -451,7 +449,7 @@ def checkpoints(mid):
     current=owned(mid)
     if expected is not None and expected!=current['version']:
         result=pack(current); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
-    source=current if current['version']==version else db().execute('SELECT * FROM manuscript_checkpoints WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
+    source=current if current['version']==version else db().execute("SELECT * FROM manuscript_checkpoints WHERE manuscript_id=? AND version=? AND kind!='legacy'",(mid,version)).fetchone()
     if source is None: source=db().execute('SELECT * FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
     if source is None: db().rollback(); return fail('보관할 버전을 찾을 수 없습니다.',404)
     checkpoint(mid,source,'manual',int(time.time()),label.strip())
@@ -478,7 +476,7 @@ def session_checkpoint(mid):
 @app.get('/api/manuscripts/<mid>/checkpoints/<int:version>')
 def checkpoint_item(mid,version):
     if not owned(mid): return fail('원고를 찾을 수 없습니다.',404)
-    row=db().execute('SELECT version,title,body,updated,kind,label FROM manuscript_checkpoints WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
+    row=db().execute("SELECT version,title,body,updated,kind,label FROM manuscript_checkpoints WHERE manuscript_id=? AND version=? AND kind!='legacy'",(mid,version)).fetchone()
     return jsonify(dict(row)) if row else fail('복원 지점을 찾을 수 없습니다.',404)
 
 @app.post('/api/manuscripts/<mid>/restore')
@@ -492,7 +490,7 @@ def restore_manuscript(mid):
     if not current: db().rollback(); return fail('원고를 찾을 수 없습니다.',404)
     if current['version']!=version:
         result=pack(current); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
-    source=db().execute('SELECT title,body FROM manuscript_checkpoints WHERE manuscript_id=? AND version=?',(mid,source_version)).fetchone()
+    source=db().execute("SELECT title,body FROM manuscript_checkpoints WHERE manuscript_id=? AND version=? AND kind!='legacy'",(mid,source_version)).fetchone()
     if source is None: source=db().execute('SELECT title,body FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,source_version)).fetchone()
     if source is None: db().rollback(); return fail('복원할 버전을 찾을 수 없습니다.',404)
     if source['title']!=current['title'] or source['body']!=current['body']:

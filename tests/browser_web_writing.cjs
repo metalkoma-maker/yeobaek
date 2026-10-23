@@ -88,9 +88,8 @@ async function performanceCheck(browser,preUndo){
    await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
    assert.match(await page.locator('.historyRecords').innerText(),/중요한 초고/);
    assert.equal(await page.locator('.historyRecords > button').count(),1);
-   assert.equal(await page.locator('.historyArchive button').isVisible(),false);
-   await page.locator('.historyArchive summary').click();
-   assert.equal(await page.locator('.historyArchive button').isVisible(),true);
+   assert.equal(await page.locator('.historyArchive').count(),0);
+   assert.doesNotMatch(await page.locator('.historyRecords').innerText(),/가짜 기존 기록/);
    page.once('dialog',d=>{assert.match(d.message(),/가짜 이전 글/);void d.accept();});
    await page.locator('.historyRecords button[data-version="0"]').click();
    await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');

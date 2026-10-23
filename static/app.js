@@ -325,23 +325,12 @@ $('historyButton').onclick=async()=>{
    if(!active()||request!==historyRequest)return;
    records.replaceChildren();
    if(!rows.length){records.textContent=source==='recent'?'아직 수정 이력이 없습니다.':'아직 예전 수정 이력이 없습니다.';return;}
-   const imported=source==='checkpoint'?rows.filter(row=>row.kind==='legacy'):[];
-   const mainRows=source==='checkpoint'?rows.filter(row=>row.kind!=='legacy').sort((a,b)=>(b.created??b.updated)-(a.created??a.updated)||b.version-a.version):rows;
+   const mainRows=source==='checkpoint'?rows.sort((a,b)=>(b.created??b.updated)-(a.created??a.updated)||b.version-a.version):rows;
    for(const row of mainRows){
     const button=document.createElement('button');button.type='button';
     button.dataset.version=String(row.version);button.dataset.source=source;
     button.textContent=new Date((source==='checkpoint'?(row.created??row.updated):row.updated)*1000).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+' · '+Number(row.characters).toLocaleString()+'자 · '+(row.label||row.title);
     button.onclick=()=>void restoreRow(row,source);records.append(button);
-   }
-   if(imported.length){
-    const archive=document.createElement('details'),summary=document.createElement('summary'),items=document.createElement('div');
-    archive.className='historyArchive';items.className='historyArchiveItems';summary.textContent='기존 수정 이력 ('+imported.length+'개)';
-    for(const row of imported){
-     const button=document.createElement('button');button.type='button';button.dataset.version=String(row.version);button.dataset.source='checkpoint';
-     button.textContent=new Date(row.updated*1000).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+' · '+Number(row.characters).toLocaleString()+'자 · '+row.title;
-     button.onclick=()=>void restoreRow(row,'checkpoint');items.append(button);
-    }
-    archive.append(summary,items);records.append(archive);
    }
   }catch(e){if(active()&&request===historyRequest)records.textContent=e.message;}
  }

@@ -6,7 +6,7 @@
 
 리뷰한 같은 커밋의 `deploy/actions_gateway.py`와 `deploy/repair_wal_gateway.py`를 서버의 같은 폴더에 복사한 뒤 관리자 권한으로 `sudo /usr/bin/python3 deploy/repair_wal_gateway.py`를 **한 번** 실행합니다. 또는 두 파일을 담은 검증된 `.pyz` 단일 파일을 서버에 복사해 `sudo /usr/bin/python3 /경로/복구파일.pyz`를 한 번 실행합니다. 스크립트는 설치된 이전 파일과 새 파일의 SHA256을 고정값으로 확인하고, 기존 게이트웨이 사본을 남기며, 제한된 계정의 `inspect`가 성공하지 않으면 이전 파일로 돌립니다. 앱 파일, DB, 서비스는 변경하지 않습니다. 이후 GitHub Actions에서 `deploy`를 새로 실행합니다. 실패한 작업의 `Re-run jobs`는 기존 커밋/실행 문맥을 재사용하므로 새 커밋의 수정을 반영하지 않습니다.
 
-현재 배포 대상은 `app.py`와 웹 파일 6개입니다. 기존 회원·원고·수정 이력·자동 백업 파일은 배포 ZIP에 넣지 않습니다. 이력·계정 변경은 기존 `manuscript_order` 표를 유지하고 `manuscript_checkpoints`, `schema_migrations`, `password_resets` 표를 추가합니다. 최초 기동 시 최근 수정 이력을 복원 지점으로 한 번 복사하고 문자 수 기준 전환 시점을 기록합니다. 기존 원고 본문과 최근 수정 이력은 다시 쓰지 않습니다.
+현재 배포 대상은 `app.py`와 웹 파일 6개입니다. 기존 회원·원고·수정 이력·자동 백업 파일은 배포 ZIP에 넣지 않습니다. 이력·계정 변경은 기존 `manuscript_order` 표를 유지하고 `manuscript_checkpoints`, `schema_migrations`, `password_resets` 표를 추가합니다. 처음 도입한 버전은 최근 수정 이력을 복원 지점으로 한 번 복사했지만, 현재 버전은 새 복사본을 만들지 않고 이미 복사된 행도 화면·복원 API에서 제외합니다. 기존 원고 본문과 최근 수정 이력은 다시 쓰지 않습니다.
 
 기존 서버 배포 도구는 `add-manuscript-order-v1`만 승인하므로 이 버전을 그대로 써서 새 표를 배포하지 않습니다. 배포 전 `deploy/upgrade_history_gateway.py`와 같은 커밋의 `deploy/actions_gateway.py`를 서버에 전달한 뒤, 관리자 권한으로 업그레이드 도구를 한 번 실행합니다. 도구는 설치된 이전 파일과 새 파일의 SHA-256을 확인하고, 서버 앱 파일·DB·서비스의 fingerprint가 바뀌지 않았는지 `inspect`로 검사합니다. 실패하면 이전 배포 도구를 복구합니다. 앱·DB·서비스는 이 단계에서 변경하지 않습니다. 이후 GitHub Actions의 `inspect`에서 `code-and-additive-history-account-v1`을 확인합니다.
 

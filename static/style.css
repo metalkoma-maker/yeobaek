@@ -96,4 +96,3 @@ header .editArrow:hover:not(:disabled){background:#edf2f7}
 .historyTabs button{flex:1;text-align:center!important;font-size:14px}
 .historyTabs button[aria-selected="true"]{background:#edf2f7;border-color:#547da8}
 .historyRecords{display:grid;gap:8px}
-.historyArchive{border-top:1px solid #dce3eb;padding-top:12px}.historyArchive summary{cursor:pointer;color:#64758b;font-size:14px}.historyArchiveItems{display:grid;gap:8px;padding-top:10px}.historyArchiveItems button{width:100%}
