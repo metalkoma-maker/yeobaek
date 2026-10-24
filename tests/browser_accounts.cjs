@@ -65,6 +65,7 @@ async function fixture(browser,loggedIn,recoveryAvailable=false){
    assert.equal(state.calls.at(-1).path,'/api/password-reset/request');
    state.failRecovery=true;
    await page.locator('#forgotPassword').click();
+   assert.equal(await page.locator('#recoveryEmail').inputValue(),'fake@example.test');
    await page.locator('#recoveryMailSubmit').click();
    await page.waitForFunction(()=>document.querySelector('#recoveryMailMessage').textContent.includes('보내지 못했습니다'));
    assert.equal(await page.locator('#recoveryMailDialog').isVisible(),true);

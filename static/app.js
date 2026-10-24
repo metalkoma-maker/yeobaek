@@ -345,7 +345,7 @@ function openRecoveryMail(){
  $('recoveryMailHelp').textContent='가입한 이메일로 30분 동안 한 번 쓸 수 있는 재설정 링크를 보냅니다.';
  $('authError').textContent='';
  $('authNotice').textContent='';$('authNotice').hidden=true;
- $('recoveryEmail').value=$('email').value;$('recoveryMailMessage').textContent='';
+ $('recoveryEmail').value=$('recoveryEmail').value||$('email').value;$('recoveryMailMessage').textContent='';
  $('recoveryMailDialog').showModal();$('recoveryEmail').focus();
 }
 const forgotPasswordButton=$('forgotPassword');
