@@ -6,7 +6,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'../static');
 async function fixture(browser,loggedIn,recoveryAvailable=false){
  const context=await browser.newContext({serviceWorkers:'block'}),page=await context.newPage();
- const state={loggedIn,calls:[],errors:[]};page.on('pageerror',e=>state.errors.push(e.message));
+ const state={loggedIn,calls:[],errors:[],failRecovery:false};page.on('pageerror',e=>state.errors.push(e.message));
  await page.route('http://127.0.0.1:8766/**',async route=>{
   const req=route.request(),url=new URL(req.url());
   const json=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
@@ -19,6 +19,7 @@ async function fixture(browser,loggedIn,recoveryAvailable=false){
    if(url.pathname==='/api/account/password')return json({email:'fake@example.test',csrf:'new-csrf'});
    if(url.pathname==='/api/account/delete'){state.loggedIn=false;return json({ok:true});}
    if(url.pathname==='/api/password-reset/confirm')return json({ok:true});
+   if(url.pathname==='/api/password-reset/request'&&state.failRecovery)return json({error:'메일을 보내지 못했습니다.'},503);
    if(url.pathname==='/api/account/recover-id'||url.pathname==='/api/password-reset/request')return json({message:'입력한 이메일로 안내를 보냈습니다.'});
    return json({error:'가짜 경로 없음'},404);
   }
@@ -59,8 +60,14 @@ async function fixture(browser,loggedIn,recoveryAvailable=false){
    await page.locator('#recoveryMailDialog').waitFor({state:'visible'});
    await page.locator('#recoveryEmail').fill('fake@example.test');
    await page.locator('#recoveryMailSubmit').click();
-   await page.waitForFunction(()=>document.querySelector('#recoveryMailMessage').textContent.includes('안내를 보냈습니다'));
+   await page.locator('#recoveryMailDialog').waitFor({state:'hidden'});
+   assert.match(await page.locator('#authNotice').textContent(),/안내를 보냈습니다/);
    assert.equal(state.calls.at(-1).path,'/api/password-reset/request');
+   state.failRecovery=true;
+   await page.locator('#forgotPassword').click();
+   await page.locator('#recoveryMailSubmit').click();
+   await page.waitForFunction(()=>document.querySelector('#recoveryMailMessage').textContent.includes('보내지 못했습니다'));
+   assert.equal(await page.locator('#recoveryMailDialog').isVisible(),true);
    assert.deepEqual(state.errors,[]);await context.close();console.log('PASS: configured recovery opens the mail request flow');
   }
   {

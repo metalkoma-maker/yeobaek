@@ -227,9 +227,9 @@ $('copyConfirm').onclick=async()=>{
  finally{copyBusy=false;$('copyConfirm').disabled=false;$('copyCancel').disabled=false;}
 };
 async function enter(user){draftEmail=user.email;refreshDraftCount();csrf=user.csrf;$('adminLink').hidden=!user.is_admin;$('accountEmail').textContent=user.email;await refreshDocuments();$('auth').hidden=true;$('workspace').hidden=false;$('download').disabled=true;$('workspace').classList.add('view-list');$('closeList').hidden=true;list();if(docs.length&&!mobileLayout.matches)render(docs[0]);}
-$('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
+$('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('authNotice').hidden=true;$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
 function updatePasswordRecoveryLink(){$('forgotPassword').hidden=register||!passwordRecoveryAvailable;}
-$('toggleAuth').onclick=()=>{register=!register;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';updatePasswordRecoveryLink();};
+$('toggleAuth').onclick=()=>{register=!register;$('authNotice').hidden=true;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';updatePasswordRecoveryLink();};
 $('logout').onclick=async()=>{if(dirty&&!await save())return;await keepSessionPoint();try{await api('/logout','POST',{});location.reload();}catch(e){notice(e.message);}};
 $('newDoc').onclick=$('firstDoc').onclick=newDoc;$('download').onclick=$('backup').onclick=download;$('retry').onclick=()=>save(true);$('useServer').onclick=()=>{persistDraft();if(confirm('서버 원고를 열면 현재 화면의 수정 내용이 교체됩니다. 필요한 내용은 내려받았나요?')){const d=conflict;docs=docs.map(x=>x.id===d.id?d:x);render(d);}};
 $('openList').onclick=showList;$('closeList').onclick=showEditor;
@@ -343,6 +343,8 @@ let resetToken=null;
 function openRecoveryMail(){
  $('recoveryMailHeading').textContent='비밀번호 찾기';
  $('recoveryMailHelp').textContent='가입한 이메일로 30분 동안 한 번 쓸 수 있는 재설정 링크를 보냅니다.';
+ $('authError').textContent='';
+ $('authNotice').textContent='';$('authNotice').hidden=true;
  $('recoveryEmail').value=$('email').value;$('recoveryMailMessage').textContent='';
  $('recoveryMailDialog').showModal();$('recoveryEmail').focus();
 }
@@ -353,7 +355,9 @@ $('recoveryMailForm').onsubmit=async e=>{
  e.preventDefault();const button=$('recoveryMailSubmit');button.disabled=true;
  try{
   const result=await api('/password-reset/request','POST',{email:$('recoveryEmail').value});
-  $('recoveryMailMessage').textContent=result.message;
+  $('authNotice').textContent=result.message;
+  $('authNotice').hidden=false;
+  if($('recoveryMailDialog').open)$('recoveryMailDialog').close();
  }catch(error){$('recoveryMailMessage').textContent=error.message;}
  finally{button.disabled=false;}
 };

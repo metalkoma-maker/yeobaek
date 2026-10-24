@@ -53,7 +53,8 @@ async function forwardPreview(context) {
     await otherPage.locator('#forgotPassword').click();
     await otherPage.locator('#recoveryEmail').fill('mobile-test@example.com');
     await otherPage.locator('#recoveryMailSubmit').click();
-    await otherPage.waitForFunction(() => document.querySelector('#recoveryMailMessage').textContent.includes('안내를 보냈습니다'));
+    await otherPage.locator('#recoveryMailDialog').waitFor({ state: 'hidden' });
+    assert.match(await otherPage.locator('#authNotice').textContent(), /안내를 보냈습니다/);
     await otherPage.goto(baseUrl + '/_preview/mail');
     const resetLink = await otherPage.getByRole('link', { name: '비밀번호 재설정 링크 열기' }).getAttribute('href');
     assert.equal(new URL(resetLink).protocol, 'https:');
