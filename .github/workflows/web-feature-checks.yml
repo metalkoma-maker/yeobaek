@@ -43,6 +43,7 @@ jobs:
           node tests/browser_web_input.cjs
           node tests/browser_web_writing.cjs
           node tests/browser_web_features.cjs
+          node tests/browser_accounts.cjs
       - name: 실제 가짜 서버 미리보기 검증
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome

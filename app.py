@@ -79,7 +79,8 @@ def guard():
     row = db().execute('SELECT s.*,u.email FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>?',(hashlib.sha256(raw.encode()).hexdigest(),int(time.time()))).fetchone()
     if row: g.user = dict(row)
     if request.path not in ['/api/register','/api/login','/api/me',
-                            '/api/account/recover-id','/api/password-reset/request','/api/password-reset/confirm']:
+                            '/api/account/recover-id','/api/password-reset/availability',
+                            '/api/password-reset/request','/api/password-reset/confirm']:
         if not g.user: return fail('로그인이 필요합니다.',401)
         if request.method != 'GET' and not hmac.compare_digest(request.headers.get('X-CSRF-Token',''),g.user['csrf']): return fail('다시 로그인해 주세요.',403)
 
@@ -167,6 +168,10 @@ def recovery_mail_ready(reset=False):
         except ValueError: return False
         if url.scheme!='https' or not url.hostname or url.username or url.password or url.path not in ('','/') or url.query or url.fragment: return False
     return True
+
+@app.get('/api/password-reset/availability')
+def password_reset_availability():
+    return jsonify(available=recovery_mail_ready(reset=True))
 
 def send_account_mail(address,subject,body):
     message=EmailMessage()

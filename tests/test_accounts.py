@@ -19,8 +19,10 @@ class AccountTest(unittest.TestCase):
     def test_recovery_mail_is_configured_and_does_not_reveal_registration(self):
         client,email,_=self.account('mail-account','198.51.100.21')
         with patch.dict('os.environ',{'SMTP_HOST':'','SMTP_FROM':'','APP_PUBLIC_URL':''}):
+            self.assertEqual(client.get('/api/password-reset/availability').json,{'available':False})
             self.assertEqual(client.post('/api/account/recover-id',json={'email':email}).status_code,503)
         with patch.dict('os.environ',MAIL_ENV), patch.object(module,'send_account_mail') as send:
+            self.assertEqual(client.get('/api/password-reset/availability').json,{'available':True})
             known=client.post('/api/account/recover-id',json={'email':email})
             unknown=client.post('/api/account/recover-id',json={'email':'missing@example.test'})
             self.assertEqual(known.status_code,200)

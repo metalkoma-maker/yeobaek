@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const root=path.resolve(__dirname,'../static');
-async function fixture(browser,loggedIn){
+async function fixture(browser,loggedIn,recoveryAvailable=false){
  const context=await browser.newContext({serviceWorkers:'block'}),page=await context.newPage();
  const state={loggedIn,calls:[],errors:[]};page.on('pageerror',e=>state.errors.push(e.message));
  await page.route('http://127.0.0.1:8766/**',async route=>{
@@ -12,6 +12,7 @@ async function fixture(browser,loggedIn){
   const json=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
   if(url.pathname.startsWith('/api/')){
    if(url.pathname==='/api/me')return state.loggedIn?json({email:'fake@example.test',csrf:'old-csrf'}):json({error:'로그인이 필요합니다.'},401);
+   if(url.pathname==='/api/password-reset/availability')return json({available:recoveryAvailable});
    if(url.pathname==='/api/manuscripts')return json([]);
    if(url.pathname==='/api/manuscript-order')return json({ids:[],version:0});
    state.calls.push({path:url.pathname,data:req.postDataJSON(),csrf:req.headers()['x-csrf-token']});
@@ -35,7 +36,7 @@ async function fixture(browser,loggedIn){
   {
    const {context,page,state}=await fixture(browser,false);
    assert.equal(await page.locator('#recoverId').count(),0);
-   assert.equal(await page.locator('#forgotPassword').count(),0);
+   assert.equal(await page.locator('#forgotPassword').isVisible(),false);
    assert.equal(state.calls.filter(x=>x.path==='/api/password-reset/request').length,0);
    await page.goto('http://127.0.0.1:8766/#reset='+'a'.repeat(43));await page.reload();
    await page.locator('#resetDialog').waitFor({state:'visible'});
@@ -47,6 +48,20 @@ async function fixture(browser,loggedIn){
    await page.waitForFunction(()=>document.querySelector('#resetMessage').textContent.includes('바꿨습니다'));
    assert.equal(state.calls.at(-1).data.token,'a'.repeat(43));
    assert.deepEqual(state.errors,[]);await context.close();console.log('PASS: mail recovery hidden and one-use reset-link web screens');
+  }
+  {
+   const {context,page,state}=await fixture(browser,false,true);
+   await page.locator('#forgotPassword').waitFor({state:'visible'});
+   await page.locator('#toggleAuth').click();
+   assert.equal(await page.locator('#forgotPassword').isVisible(),false);
+   await page.locator('#toggleAuth').click();
+   await page.locator('#forgotPassword').click();
+   await page.locator('#recoveryMailDialog').waitFor({state:'visible'});
+   await page.locator('#recoveryEmail').fill('fake@example.test');
+   await page.locator('#recoveryMailSubmit').click();
+   await page.waitForFunction(()=>document.querySelector('#recoveryMailMessage').textContent.includes('안내를 보냈습니다'));
+   assert.equal(state.calls.at(-1).path,'/api/password-reset/request');
+   assert.deepEqual(state.errors,[]);await context.close();console.log('PASS: configured recovery opens the mail request flow');
   }
   {
    const {context,page,state}=await fixture(browser,true);
