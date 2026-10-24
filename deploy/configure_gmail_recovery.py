@@ -13,6 +13,7 @@ import smtplib
 import ssl
 import subprocess
 import tempfile
+import time
 from email.message import EmailMessage
 
 CONFIG = Path('/etc/yeobaek-actions.json')
@@ -82,8 +83,21 @@ def send_test(address, password, recipient):
         smtp.send_message(message)
 
 
+def wait_availability(host, check, pause=None, attempts=20):
+    pause = pause or time.sleep
+    for attempt in range(attempts):
+        try:
+            if check(host) is True:
+                return
+        except (ValueError, subprocess.SubprocessError, OSError):
+            pass  # The web service may still be starting after systemctl restart.
+        if attempt + 1 < attempts:
+            pause(0.5)
+    raise ValueError('비밀번호 찾기 응답 확인 실패')
+
+
 def apply_config(mail_path, dropin_path, address, password, host, service, run=command,
-                 check=availability):
+                 check=availability, pause=None):
     protected(mail_path, secret=True)
     protected(dropin_path)
     before = {path: path.read_bytes() if path.exists() else None for path in (mail_path, dropin_path)}
@@ -93,15 +107,19 @@ def apply_config(mail_path, dropin_path, address, password, host, service, run=c
                 f'SMTP_FROM={address}\nSMTP_USERNAME={address}\nSMTP_PASSWORD={password}\n'
                 f'APP_PUBLIC_URL=https://{host}\n').encode()
     dropin = ('[Service]\nEnvironmentFile=' + str(mail_path) + '\n').encode()
+    stage = '설정 파일 기록'
     try:
         write_atomic(mail_path, contents, 0o600)
         write_atomic(dropin_path, dropin, 0o644)
+        stage = '서비스 설정 읽기'
         run('/usr/bin/systemctl', 'daemon-reload')
+        stage = '서비스 재시작'
         run('/usr/bin/systemctl', 'restart', service)
+        stage = '비밀번호 찾기 응답 확인'
+        wait_availability(host, check, pause)
+        stage = '서비스 실행 상태 확인'
         run('/usr/bin/systemctl', 'is-active', '--quiet', service)
-        if check(host) is not True:
-            raise ValueError('Recovery button remained unavailable after restart')
-    except BaseException:
+    except BaseException as error:
         try:
             for path in (mail_path, dropin_path):
                 if before[path] is None:
@@ -112,7 +130,8 @@ def apply_config(mail_path, dropin_path, address, password, host, service, run=c
             run('/usr/bin/systemctl', 'restart', service)
         except BaseException:
             raise RuntimeError('Automatic mail configuration rollback failed; administrator inspection is required') from None
-        raise
+        raise ValueError('메일 설정 실패 단계: ' + stage + '; 원인: ' +
+                         type(error).__name__ + '; 기존 설정 복원 완료') from None
 
 
 def main():

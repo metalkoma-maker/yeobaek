@@ -28,13 +28,33 @@ class GmailRecoverySetupTest(unittest.TestCase):
                 path.write_bytes(contents); path.chmod(mode)
             def run(*args): calls.append(args)
             with patch.object(setup, 'protected'), patch.object(setup, 'write_atomic', side_effect=write):
-                with self.assertRaisesRegex(ValueError, 'remained unavailable'):
+                with self.assertRaisesRegex(ValueError, '비밀번호 찾기 응답 확인'):
                     setup.apply_config(mail, dropin, 'novel.test@gmail.com', 'abcdefghijklmnop',
-                                       'novel.example.test', 'yeobaek', run, lambda host: False)
+                                       'novel.example.test', 'yeobaek', run, lambda host: False,
+                                       pause=lambda delay: None)
             self.assertEqual(mail.read_bytes(), b'OLD_SECRET=old\n')
             self.assertEqual(dropin.read_bytes(), b'[Service]\nOld=1\n')
             self.assertEqual(mail.stat().st_mode & 0o777, 0o600)
             self.assertEqual(calls.count(('/usr/bin/systemctl', 'restart', 'yeobaek')), 2)
+
+    def test_waits_for_service_to_answer_after_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mail, dropin = root / 'mail.env', root / 'mail.conf'
+            calls, checks = [], []
+            def write(path, contents, mode):
+                path.write_bytes(contents); path.chmod(mode)
+            def check(host):
+                checks.append(host)
+                if len(checks) == 1:
+                    raise OSError('synthetic startup delay')
+                return len(checks) >= 3
+            with patch.object(setup, 'protected'), patch.object(setup, 'write_atomic', side_effect=write):
+                setup.apply_config(mail, dropin, 'novel.test@gmail.com', 'abcdefghijklmnop',
+                                   'novel.example.test', 'yeobaek', lambda *args: calls.append(args),
+                                   check, pause=lambda delay: None)
+            self.assertEqual(len(checks), 3)
+            self.assertEqual(calls.count(('/usr/bin/systemctl', 'restart', 'yeobaek')), 1)
 
     def test_symlink_mail_file_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -43,6 +63,26 @@ class GmailRecoverySetupTest(unittest.TestCase):
             (root / 'mail.env').symlink_to(root / 'target')
             with self.assertRaises(ValueError):
                 setup.protected(root / 'mail.env')
+
+    def test_restart_failure_reports_stage_after_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mail, dropin = root / 'mail.env', root / 'mail.conf'
+            restarts = []
+            def write(path, contents, mode):
+                path.write_bytes(contents); path.chmod(mode)
+            def run(*args):
+                if args[-2:] == ('restart', 'yeobaek'):
+                    restarts.append(args)
+                    if len(restarts) == 1:
+                        raise OSError('synthetic restart failure')
+            with patch.object(setup, 'protected'), patch.object(setup, 'write_atomic', side_effect=write):
+                with self.assertRaisesRegex(ValueError, '서비스 재시작; 원인: OSError'):
+                    setup.apply_config(mail, dropin, 'novel.test@gmail.com', 'abcdefghijklmnop',
+                                       'novel.example.test', 'yeobaek', run, lambda host: True)
+            self.assertFalse(mail.exists())
+            self.assertFalse(dropin.exists())
+            self.assertEqual(len(restarts), 2)
 
     def test_rollback_failure_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
