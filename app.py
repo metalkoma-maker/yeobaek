@@ -135,6 +135,7 @@ def auth(action):
     db().commit()
     if db().execute('SELECT count FROM attempts WHERE key=?',(key,)).fetchone()[0]>15: return fail('시도가 많습니다. 15분 후 다시 시도해 주세요.',429)
     if action=='register':
+        if data.get('age_confirmed') is not True: return fail('만 14세 이상인지 확인해 주세요.')
         salt=secrets.token_hex(16); uid=secrets.token_hex(16)
         try:
             db().execute('INSERT INTO users VALUES(?,?,?)',(uid,email,salt+':'+digest(password,salt)))

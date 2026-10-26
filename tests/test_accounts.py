@@ -12,7 +12,7 @@ class AccountTest(unittest.TestCase):
         client=module.app.test_client()
         client.environ_base['REMOTE_ADDR']=ip
         email=name+'@example.com'
-        result=client.post('/api/register',json={'email':email,'password':'old-password-123'})
+        result=client.post('/api/register',json={'email':email,'password':'old-password-123','age_confirmed':True})
         self.assertEqual(result.status_code,200)
         return client,email,{'X-CSRF-Token':result.json['csrf']}
 

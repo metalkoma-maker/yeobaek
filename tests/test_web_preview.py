@@ -12,9 +12,10 @@ class WebPreviewTest(unittest.TestCase):
         try:
             client = module.app.test_client()
             credentials = {'email': 'preview-forwarding@example.com', 'password': 'test-password-123'}
+            registration = {**credentials, 'age_confirmed': True}
             headers = {'Origin': 'http://localhost:8001', 'Referer': origin + '/',
                        'Sec-Fetch-Site': 'same-origin'}
-            registered = client.post('/api/register', base_url=origin, headers=headers, json=credentials)
+            registered = client.post('/api/register', base_url=origin, headers=headers, json=registration)
             self.assertEqual(registered.status_code, 200)
             for changes in ({'Referer': 'https://foreign.example.test/'},
                             {'Sec-Fetch-Site': 'cross-site'},

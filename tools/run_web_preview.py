@@ -140,7 +140,7 @@ def main():
         base_url = origin or f'http://localhost:{args.port}'
         with module.app.test_client() as client:
             registered = client.post('/api/register', base_url=base_url,
-                                     json={'email': EMAIL, 'password': PASSWORD})
+                                     json={'email': EMAIL, 'password': PASSWORD, 'age_confirmed': True})
             if registered.status_code != 200:
                 raise RuntimeError('Could not create the synthetic account')
             headers = {'X-CSRF-Token': registered.json['csrf']}

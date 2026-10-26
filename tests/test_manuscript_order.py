@@ -12,7 +12,7 @@ class ManuscriptOrderTest(unittest.TestCase):
     def account(self, label):
         client=module.app.test_client()
         email=label+'@example.com'
-        response=client.post('/api/register',json={'email':email,'password':'test-password-123'})
+        response=client.post('/api/register',json={'email':email,'password':'test-password-123','age_confirmed':True})
         self.assertEqual(response.status_code,200)
         return client,{'X-CSRF-Token':response.json['csrf']},email
 
