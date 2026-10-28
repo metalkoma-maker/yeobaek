@@ -5,8 +5,27 @@ import app as module
 
 class AppTest(unittest.TestCase):
     def register(self,email):
-        c=module.app.test_client(); r=c.post('/api/register',json={'email':email,'password':'test-password-123'})
+        c=module.app.test_client(); r=c.post('/api/register',json={'email':email,'password':'test-password-123','age_confirmed':True})
         self.assertEqual(r.status_code,200); return c,{'X-CSRF-Token':r.json['csrf']}
+
+    def test_registration_requires_explicit_age_confirmation(self):
+        client=module.app.test_client()
+        address='age-confirmation@example.com'
+        payload={'email':address,'password':'test-password-123'}
+        for value in (None,False,'true',1):
+            attempt={**payload}
+            if value is not None: attempt['age_confirmed']=value
+            response=client.post('/api/register',json=attempt)
+            self.assertEqual(response.status_code,400)
+            self.assertIn('만 14세 이상',response.json['error'])
+        with module.app.app_context():
+            self.assertIsNone(module.db().execute('SELECT id FROM users WHERE email=?',(address,)).fetchone())
+        registered=client.post('/api/register',json={**payload,'age_confirmed':True})
+        self.assertEqual(registered.status_code,200)
+        self.assertEqual(client.get('/api/me').json['email'],address)
+        client.post('/api/logout',json={},headers={'X-CSRF-Token':registered.json['csrf']})
+        self.assertEqual(client.post('/api/login',json=payload).status_code,200)
+
     def test_writing_sync_privacy_conflict(self):
         a,ha=self.register('writer-a@example.com'); b,hb=self.register('writer-b@example.com')
         d=a.post('/api/manuscripts',json={},headers=ha).json

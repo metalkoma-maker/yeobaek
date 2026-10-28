@@ -12,7 +12,7 @@ class HistoryCheckpointTest(unittest.TestCase):
     def account(self, label):
         client = module.app.test_client()
         response = client.post('/api/register', json={
-            'email': label + '@example.com', 'password': 'test-password-123',
+            'email': label + '@example.com', 'password': 'test-password-123', 'age_confirmed': True,
         })
         self.assertEqual(response.status_code, 200)
         return client, {'X-CSRF-Token': response.json['csrf']}

@@ -16,6 +16,10 @@ async function fixture(browser,loggedIn,recoveryAvailable=false){
    if(url.pathname==='/api/manuscripts')return json([]);
    if(url.pathname==='/api/manuscript-order')return json({ids:[],version:0});
    state.calls.push({path:url.pathname,data:req.postDataJSON(),csrf:req.headers()['x-csrf-token']});
+   if(url.pathname==='/api/register'){
+    if(req.postDataJSON().age_confirmed!==true)return json({error:'만 14세 이상인지 확인해 주세요.'},400);
+    state.loggedIn=true;return json({email:'fake@example.test',csrf:'new-csrf'});
+   }
    if(url.pathname==='/api/account/password')return json({email:'fake@example.test',csrf:'new-csrf'});
    if(url.pathname==='/api/account/delete'){state.loggedIn=false;return json({ok:true});}
    if(url.pathname==='/api/password-reset/confirm')return json({ok:true});
@@ -34,6 +38,21 @@ async function fixture(browser,loggedIn,recoveryAvailable=false){
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  try{
+  {
+   const {context,page,state}=await fixture(browser,false);
+   assert.equal(await page.locator('#ageConfirmRow').isVisible(),false);
+   await page.locator('#toggleAuth').click();
+   await page.locator('#ageConfirmRow').waitFor({state:'visible'});
+   await page.locator('#email').fill('fake@example.test');
+   await page.locator('#password').fill('test-password-123');
+   await page.locator('#submitAuth').click();
+   assert.equal(state.calls.filter(x=>x.path==='/api/register').length,0);
+   await page.locator('#ageConfirmed').check();
+   await page.locator('#submitAuth').click();
+   await page.locator('#workspace').waitFor({state:'visible'});
+   assert.equal(state.calls.at(-1).data.age_confirmed,true);
+   assert.deepEqual(state.errors,[]);await context.close();console.log('PASS: age confirmation is required for signup and sent to the API');
+  }
   {
    const {context,page,state}=await fixture(browser,false);
    assert.equal(await page.locator('#recoverId').count(),0);

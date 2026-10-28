@@ -35,7 +35,7 @@ class SiteBrandTest(unittest.TestCase):
             try:
                 client = module.app.test_client()
                 signup = client.post('/api/register', json={'email': 'brand-test@example.com',
-                                                            'password': 'test-password-123'})
+                                                            'password': 'test-password-123', 'age_confirmed': True})
                 self.assertEqual(signup.status_code, 200)
                 admin = client.get('/admin')
                 self.assertEqual(admin.status_code, 200)

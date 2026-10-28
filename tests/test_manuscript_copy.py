@@ -6,7 +6,7 @@ from test_app import module
 class ManuscriptCopyTest(unittest.TestCase):
     def account(self, name):
         client=module.app.test_client()
-        response=client.post('/api/register',json={'email':name+'@example.com','password':'test-password-123'})
+        response=client.post('/api/register',json={'email':name+'@example.com','password':'test-password-123','age_confirmed':True})
         self.assertEqual(response.status_code,200)
         return client,{'X-CSRF-Token':response.json['csrf']}
 
