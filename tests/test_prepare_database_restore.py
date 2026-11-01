@@ -108,6 +108,7 @@ class PrepareDatabaseRestoreTest(unittest.TestCase):
         with sqlite3.connect(self.output) as db:
             self.assertEqual(db.execute('SELECT id FROM users').fetchall(),[('active',)])
             self.assertEqual(db.execute('SELECT body FROM manuscripts').fetchall(),[('kept text',)])
+            self.assertEqual(db.execute('SELECT count(*) FROM withdrawal_requests').fetchone()[0],0)
 
     def test_protected_backup_refuses_missing_or_incomplete_ledger(self):
         self.protect_backup()

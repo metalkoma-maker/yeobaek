@@ -318,6 +318,9 @@ def delete_account():
     db().execute('BEGIN IMMEDIATE')
     db().execute('UPDATE withdrawal_requests SET remote_confirmed=1 WHERE user_id=?',(g.user['user_id'],))
     db().execute('DELETE FROM users WHERE id=?',(g.user['user_id'],))
+    # The receipt remains offsite while old backups can still contain this
+    # account. A completed deletion needs no local request row in new backups.
+    db().execute('DELETE FROM withdrawal_requests WHERE user_id=?',(g.user['user_id'],))
     db().commit()
     response=jsonify(ok=True)
     response.delete_cookie('novel_session',secure=SECURE,samesite='Lax')
@@ -387,6 +390,7 @@ def reconcile_withdrawals(epoch):
                 VALUES(?,?,1) ON CONFLICT(user_id) DO UPDATE SET remote_confirmed=1''',
                          (user_id,event['requested']))
             db().execute('DELETE FROM users WHERE id=?',(user_id,))
+            db().execute('DELETE FROM withdrawal_requests WHERE user_id=?',(user_id,))
     db().commit()
 
 def owned(mid): return db().execute('SELECT * FROM manuscripts WHERE id=? AND user_id=?',(mid,g.user['user_id'])).fetchone()

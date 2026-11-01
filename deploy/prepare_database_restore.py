@@ -125,6 +125,9 @@ def prepare(current_path, backup_path, output_path, use_remote=False,
                         VALUES(?,?,1) ON CONFLICT(user_id) DO UPDATE SET remote_confirmed=1''',
                                        ((uid,0) for uid in removed))
                 staged.executemany('DELETE FROM users WHERE id=?', ((uid,) for uid in removed))
+                if protected:
+                    staged.executemany('DELETE FROM withdrawal_requests WHERE user_id=?',
+                                       ((uid,) for uid in removed))
                 # A restore never carries login sessions, reset links, or
                 # rate-limit records from a different point in time.
                 for table in ('sessions', 'password_resets', 'attempts'):

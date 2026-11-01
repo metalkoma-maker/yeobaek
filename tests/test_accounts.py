@@ -123,7 +123,7 @@ class AccountTest(unittest.TestCase):
                 self.assertEqual(module.db().execute(f'SELECT count(*) FROM {table} WHERE {column}=?',(uid,)).fetchone()[0],0,table)
             for table in ('manuscript_history','manuscript_checkpoints','daily'):
                 self.assertEqual(module.db().execute(f'SELECT count(*) FROM {table} WHERE manuscript_id=?',(doc['id'],)).fetchone()[0],0,table)
-            self.assertEqual(module.db().execute('SELECT remote_confirmed FROM withdrawal_requests WHERE user_id=?',(uid,)).fetchone()[0],1)
+            self.assertIsNone(module.db().execute('SELECT 1 FROM withdrawal_requests WHERE user_id=?',(uid,)).fetchone())
 
     def test_failed_offsite_receipt_keeps_account_pending_until_retry(self):
         client,email,headers=self.account('delete-retry','198.51.100.26')
@@ -162,6 +162,7 @@ class AccountTest(unittest.TestCase):
                 module.reconcile_withdrawals('a'*32)
             self.assertIsNone(module.db().execute('SELECT id FROM users WHERE id=?',(uid,)).fetchone())
             self.assertIsNone(module.db().execute('SELECT id FROM manuscripts WHERE id=?',(doc['id'],)).fetchone())
+            self.assertIsNone(module.db().execute('SELECT 1 FROM withdrawal_requests WHERE user_id=?',(uid,)).fetchone())
         self.assertEqual(client.get('/api/me').status_code,401)
 
     def test_missing_confirmed_receipt_stops_startup_reconciliation(self):
