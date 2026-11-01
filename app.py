@@ -1,4 +1,4 @@
-import os, sqlite3, secrets, hashlib, hmac, time, re, json, smtplib, ssl
+import os, sqlite3, secrets, hashlib, hmac, time, re, json, smtplib, ssl, subprocess
 from email.message import EmailMessage
 from urllib.parse import urlsplit
 from datetime import datetime, timedelta
@@ -14,6 +14,8 @@ SEOUL = ZoneInfo('Asia/Seoul')
 CHECKPOINT_INTERVAL = 30 * 60
 RESUME_INTERVAL = 10 * 60
 RESET_LIFETIME = 30 * 60
+WITHDRAWAL_REMOTE = 'yeobaek_crypt:withdrawals'
+RCLONE_CONFIG = '/root/.config/rclone/rclone.conf'
 
 def db():
     if 'db' not in g:
@@ -29,6 +31,12 @@ def close(error):
 
 def init():
     with app.app_context():
+        # The activation script installs this marker before this code is
+        # deployed. A pre-activation DB backup must never boot as a live app.
+        marker=db().execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='withdrawal_state'").fetchone()
+        epochs=db().execute('SELECT epoch FROM withdrawal_state').fetchall() if marker else []
+        if len(epochs)!=1 or not re.fullmatch(r'[0-9a-f]{32}',epochs[0]['epoch']):
+            raise RuntimeError('Withdrawal ledger activation is required before serving the database')
         db().executescript('''
         PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL);
@@ -41,6 +49,11 @@ def init():
         CREATE TABLE IF NOT EXISTS manuscript_order(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,ids TEXT NOT NULL,version INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,started INTEGER NOT NULL,count INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS password_resets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS withdrawal_state(epoch TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS withdrawal_requests(user_id TEXT PRIMARY KEY,requested INTEGER NOT NULL,remote_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(remote_confirmed IN (0,1)));
+        CREATE TRIGGER IF NOT EXISTS users_delete_requires_withdrawal_receipt BEFORE DELETE ON users
+        WHEN NOT EXISTS(SELECT 1 FROM withdrawal_requests WHERE user_id=OLD.id AND remote_confirmed=1)
+        BEGIN SELECT RAISE(ABORT, 'withdrawal receipt required'); END;
         ''')
         # Existing recent history stays in manuscript_history. Older imported
         # copies, if present from a previous release, are left untouched.
@@ -56,6 +69,8 @@ def init():
             midnight=datetime(effective.year,effective.month,effective.day,tzinfo=SEOUL)
             db().execute("INSERT INTO schema_migrations VALUES('count_spaces_v1',?)",(int(midnight.timestamp()),))
         db().commit()
+        if os.environ.get('WITHDRAWAL_TEST_MODE') != '1' or not Path(DB).resolve().is_relative_to('/tmp'):
+            reconcile_withdrawals(epochs[0]['epoch'])
 
 def day(): return datetime.now(SEOUL).date().isoformat()
 def count(text): return len(re.sub(r'[\r\n\u2028\u2029]', '', text))
@@ -78,6 +93,9 @@ def guard():
     raw = request.cookies.get('novel_session','')
     row = db().execute('SELECT s.*,u.email FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>?',(hashlib.sha256(raw.encode()).hexdigest(),int(time.time()))).fetchone()
     if row: g.user = dict(row)
+    if g.user and request.method != 'GET' and request.path not in ('/api/account/delete','/api/logout'):
+        if db().execute('SELECT 1 FROM withdrawal_requests WHERE user_id=?',(g.user['user_id'],)).fetchone():
+            return fail('탈퇴 처리가 진행 중입니다. 계정 설정에서 탈퇴를 다시 시도해 주세요.',423)
     if request.path not in ['/api/register','/api/login','/api/me',
                             '/api/account/recover-id','/api/password-reset/availability',
                             '/api/password-reset/request','/api/password-reset/confirm']:
@@ -281,13 +299,91 @@ def delete_account():
     if app.is_admin(g.user): return fail('관리자 계정은 이 화면에서 탈퇴할 수 없습니다.',403)
     db().execute('BEGIN IMMEDIATE')
     row=db().execute('SELECT password FROM users WHERE id=?',(g.user['user_id'],)).fetchone()
+    if not row: db().rollback(); return fail('계정을 찾을 수 없습니다.',404)
     salt,expected=row['password'].split(':')
     if not hmac.compare_digest(digest(password,salt),expected): db().rollback(); return fail('비밀번호가 맞지 않습니다.',403)
+    epochs=db().execute('SELECT epoch FROM withdrawal_state').fetchall()
+    if len(epochs)!=1: db().rollback(); return fail('탈퇴 기록 저장을 준비 중입니다. 잠시 뒤 다시 시도해 주세요.',503)
+    epoch=epochs[0]['epoch']
+    if not re.fullmatch(r'[0-9a-f]{32}',epoch): db().rollback(); return fail('탈퇴 기록 설정을 확인할 수 없습니다.',503)
+    db().execute('INSERT OR IGNORE INTO withdrawal_requests(user_id,requested) VALUES(?,?)',
+                 (g.user['user_id'],int(time.time())))
+    requested=db().execute('SELECT requested FROM withdrawal_requests WHERE user_id=?',(g.user['user_id'],)).fetchone()['requested']
+    db().commit()
+    try:
+        upload_withdrawal_receipt(epoch,g.user['user_id'],requested)
+    except (OSError,subprocess.SubprocessError,RuntimeError):
+        app.logger.exception('Withdrawal receipt could not be verified')
+        return fail('탈퇴 기록을 확인하지 못했습니다. 잠시 뒤 계정 설정에서 다시 시도해 주세요.',503)
+    db().execute('BEGIN IMMEDIATE')
+    db().execute('UPDATE withdrawal_requests SET remote_confirmed=1 WHERE user_id=?',(g.user['user_id'],))
     db().execute('DELETE FROM users WHERE id=?',(g.user['user_id'],))
     db().commit()
     response=jsonify(ok=True)
     response.delete_cookie('novel_session',secure=SECURE,samesite='Lax')
     return response
+
+def upload_withdrawal_receipt(epoch,user_id,requested):
+    """An uploaded receipt is an irrevocable withdrawal intent, not an email log."""
+    if not re.fullmatch(r'[0-9a-f]{32}',user_id): raise ValueError('Invalid internal account ID')
+    payload=json.dumps({'epoch':epoch,'user_id':user_id,'requested':requested},
+                       sort_keys=True,separators=(',',':')).encode()
+    remote=f'{WITHDRAWAL_REMOTE}/{epoch}/users/{user_id}.json'
+    command=['rclone','--config',RCLONE_CONFIG,'--retries','1','--low-level-retries','1']
+    subprocess.run(command+['rcat',remote],input=payload,stdout=subprocess.DEVNULL,
+                   stderr=subprocess.PIPE,check=True,timeout=10)
+    result=subprocess.run(command+['cat',remote],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                          check=True,timeout=10)
+    if result.stdout!=payload: raise RuntimeError('Withdrawal receipt readback mismatch')
+
+def read_withdrawal_receipts(epoch):
+    """Read the encrypted Drive ledger before serving any account after startup."""
+    root=f'{WITHDRAWAL_REMOTE}/{epoch}'
+    command=['rclone','--config',RCLONE_CONFIG,'--retries','1','--low-level-retries','1']
+    def read(*args):
+        return subprocess.run(command+list(args),stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                              check=True,timeout=10).stdout
+    anchor={'epoch':epoch,'version':1}
+    if json.loads(read('cat',root+'/anchor.json'))!=anchor:
+        raise RuntimeError('Withdrawal ledger anchor mismatch')
+    if json.loads(read('cat',root+'/users/_initialized.json'))!=anchor:
+        raise RuntimeError('Withdrawal ledger directory mismatch')
+    rows=json.loads(read('lsjson',root+'/users','--files-only'))
+    if not isinstance(rows,list): raise RuntimeError('Withdrawal ledger listing is invalid')
+    ids=set()
+    for item in rows:
+        name=item.get('Path')
+        if name=='_initialized.json': continue
+        if not isinstance(name,str) or not re.fullmatch(r'[0-9a-f]{32}\.json',name):
+            raise RuntimeError('Unexpected withdrawal ledger entry')
+        ids.add(name[:-5])
+    return ids
+
+def reconcile_withdrawals(epoch):
+    withdrawn=read_withdrawal_receipts(epoch)
+    admin_config=Path(__file__).with_name('admin_config.json')
+    if admin_config.is_file() and json.loads(admin_config.read_text()).get('user_id') in withdrawn:
+        raise RuntimeError('Withdrawal ledger unexpectedly includes the administrator')
+    db().execute('BEGIN IMMEDIATE')
+    confirmed={row['user_id'] for row in db().execute('SELECT user_id FROM withdrawal_requests WHERE remote_confirmed=1')}
+    if not confirmed<=withdrawn:
+        db().rollback()
+        raise RuntimeError('Withdrawal ledger is missing a confirmed account')
+    for user_id in withdrawn:
+        if db().execute('SELECT 1 FROM users WHERE id=?',(user_id,)).fetchone():
+            remote=f'{WITHDRAWAL_REMOTE}/{epoch}/users/{user_id}.json'
+            result=subprocess.run(['rclone','--config',RCLONE_CONFIG,'--retries','1',
+                                   '--low-level-retries','1','cat',remote],stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE,check=True,timeout=10)
+            event=json.loads(result.stdout)
+            if event.get('epoch')!=epoch or event.get('user_id')!=user_id or type(event.get('requested')) is not int:
+                db().rollback()
+                raise RuntimeError('Withdrawal receipt contents do not match')
+            db().execute('''INSERT INTO withdrawal_requests(user_id,requested,remote_confirmed)
+                VALUES(?,?,1) ON CONFLICT(user_id) DO UPDATE SET remote_confirmed=1''',
+                         (user_id,event['requested']))
+            db().execute('DELETE FROM users WHERE id=?',(user_id,))
+    db().commit()
 
 def owned(mid): return db().execute('SELECT * FROM manuscripts WHERE id=? AND user_id=?',(mid,g.user['user_id'])).fetchone()
 def pack(row):

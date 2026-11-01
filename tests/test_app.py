@@ -1,5 +1,9 @@
-import os, tempfile, unittest, sys
+import os, sqlite3, tempfile, unittest, sys
 os.environ['DATABASE_PATH']=tempfile.mktemp(suffix='.sqlite3')
+os.environ['WITHDRAWAL_TEST_MODE']='1'
+with sqlite3.connect(os.environ['DATABASE_PATH']) as test_db:
+    test_db.execute('CREATE TABLE withdrawal_state(epoch TEXT PRIMARY KEY)')
+    test_db.execute('INSERT INTO withdrawal_state VALUES(?)',('a'*32,))
 sys.path.insert(0,os.path.dirname(os.path.dirname(__file__)))
 import app as module
 
