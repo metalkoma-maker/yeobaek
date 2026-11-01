@@ -98,6 +98,8 @@ class HistoryCheckpointTest(unittest.TestCase):
                 CREATE TABLE manuscripts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 0,updated INTEGER NOT NULL);
                 CREATE TABLE manuscript_history(manuscript_id TEXT NOT NULL,version INTEGER NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(manuscript_id,version));
                 CREATE TABLE daily(manuscript_id TEXT NOT NULL,day TEXT NOT NULL,delta INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(manuscript_id,day));
+                CREATE TABLE withdrawal_state(epoch TEXT PRIMARY KEY);
+                INSERT INTO withdrawal_state VALUES('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
                 INSERT INTO users VALUES('u','fake@example.com','fake');
                 INSERT INTO manuscripts VALUES('m','u','현재','현재 글',2,300);
                 INSERT INTO manuscript_history VALUES('m',1,'옛 제목','옛 글',200);

@@ -69,12 +69,19 @@ def main():
     # Override any inherited DB setting before importing code that initializes it.
     with tempfile.TemporaryDirectory(prefix='yeobaek-web-preview-') as directory:
         os.environ['DATABASE_PATH'] = str(Path(directory) / 'synthetic.sqlite3')
+        os.environ['WITHDRAWAL_TEST_MODE'] = '1'
+        import sqlite3
+        with sqlite3.connect(os.environ['DATABASE_PATH']) as synthetic_db:
+            synthetic_db.execute('CREATE TABLE withdrawal_state(epoch TEXT PRIMARY KEY)')
+            synthetic_db.execute('INSERT INTO withdrawal_state VALUES(?)',('a'*32,))
         os.environ['COOKIE_SECURE'] = '1' if origin else '0'
         os.environ['SMTP_HOST'] = 'synthetic-preview.invalid'
         os.environ['SMTP_FROM'] = 'preview@synthetic.invalid'
         os.environ['SMTP_USERNAME'] = os.environ['SMTP_PASSWORD'] = ''
         os.environ['APP_PUBLIC_URL'] = origin or f'https://localhost:{args.port}'
         import app as module
+        # This server uses a disposable database; never contact production Drive.
+        module.upload_withdrawal_receipt = lambda epoch, user_id, requested: None
         from flask import Response, request
         messages = []
 
