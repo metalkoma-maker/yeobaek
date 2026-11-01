@@ -71,6 +71,12 @@ def activate(database=DATABASE):
                 raise ValueError('Withdrawal ledger database guard is incomplete')
             verify_record(root + '/anchor.json', payload)
             verify_record(root + '/users/_initialized.json', payload)
+            listed = json.loads(run('lsjson', root + '/users', '--files-only'))
+            recorded = {item.get('Path', '')[:-5] for item in listed
+                        if re.fullmatch(r'[0-9a-f]{32}\.json', item.get('Path', ''))}
+            confirmed = {row[0] for row in conn.execute('SELECT user_id FROM withdrawal_requests WHERE remote_confirmed=1')}
+            if not confirmed <= recorded:
+                raise ValueError('Previously confirmed withdrawal receipt is missing')
             return {'status': 'already_active'}
         run('rcat', root + '/anchor.json', input_data=payload)
         verify_record(root + '/anchor.json', payload)
