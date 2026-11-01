@@ -1,5 +1,6 @@
 """Account recovery and deletion use only the disposable test database."""
 import json
+import os
 import re
 import sqlite3
 import tempfile
@@ -196,6 +197,12 @@ class AccountTest(unittest.TestCase):
                                                                 SimpleNamespace(stdout=b'wrong')]):
             with self.assertRaisesRegex(RuntimeError,'readback mismatch'):
                 module.upload_withdrawal_receipt(epoch,uid,123)
+
+    def test_remote_unavailable_blocks_app_startup(self):
+        with patch.dict(os.environ,{'WITHDRAWAL_TEST_MODE':'0'}), \
+             patch.object(module,'read_withdrawal_receipts',side_effect=RuntimeError('synthetic Drive outage')):
+            with self.assertRaisesRegex(RuntimeError,'synthetic Drive outage'):
+                module.init()
 
 
 if __name__=='__main__': unittest.main()
