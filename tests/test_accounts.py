@@ -154,8 +154,11 @@ class AccountTest(unittest.TestCase):
             uid=module.db().execute('SELECT id FROM users WHERE email=?',(email,)).fetchone()['id']
             confirmed={row['user_id'] for row in module.db().execute('SELECT user_id FROM withdrawal_requests WHERE remote_confirmed=1')}
             event={'epoch':'a'*32,'user_id':uid,'requested':123}
+            def read_event(*args,**kwargs):
+                self.assertFalse(module.db().in_transaction)
+                return SimpleNamespace(stdout=json.dumps(event).encode())
             with patch.object(module,'read_withdrawal_receipts',return_value=confirmed|{uid}), \
-                 patch.object(module.subprocess,'run',return_value=SimpleNamespace(stdout=json.dumps(event).encode())):
+                 patch.object(module.subprocess,'run',side_effect=read_event):
                 module.reconcile_withdrawals('a'*32)
             self.assertIsNone(module.db().execute('SELECT id FROM users WHERE id=?',(uid,)).fetchone())
             self.assertIsNone(module.db().execute('SELECT id FROM manuscripts WHERE id=?',(doc['id'],)).fetchone())

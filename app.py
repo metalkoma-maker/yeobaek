@@ -364,21 +364,25 @@ def reconcile_withdrawals(epoch):
     admin_config=Path(__file__).with_name('admin_config.json')
     if admin_config.is_file() and json.loads(admin_config.read_text()).get('user_id') in withdrawn:
         raise RuntimeError('Withdrawal ledger unexpectedly includes the administrator')
+    events={}
+    for user_id in withdrawn:
+        if not db().execute('SELECT 1 FROM users WHERE id=?',(user_id,)).fetchone():
+            continue
+        remote=f'{WITHDRAWAL_REMOTE}/{epoch}/users/{user_id}.json'
+        result=subprocess.run(['rclone','--config',RCLONE_CONFIG,'--retries','1',
+                               '--low-level-retries','1','cat',remote],stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,check=True,timeout=10)
+        event=json.loads(result.stdout)
+        if event.get('epoch')!=epoch or event.get('user_id')!=user_id or type(event.get('requested')) is not int:
+            raise RuntimeError('Withdrawal receipt contents do not match')
+        events[user_id]=event
     db().execute('BEGIN IMMEDIATE')
     confirmed={row['user_id'] for row in db().execute('SELECT user_id FROM withdrawal_requests WHERE remote_confirmed=1')}
     if not confirmed<=withdrawn:
         db().rollback()
         raise RuntimeError('Withdrawal ledger is missing a confirmed account')
-    for user_id in withdrawn:
+    for user_id,event in events.items():
         if db().execute('SELECT 1 FROM users WHERE id=?',(user_id,)).fetchone():
-            remote=f'{WITHDRAWAL_REMOTE}/{epoch}/users/{user_id}.json'
-            result=subprocess.run(['rclone','--config',RCLONE_CONFIG,'--retries','1',
-                                   '--low-level-retries','1','cat',remote],stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,check=True,timeout=10)
-            event=json.loads(result.stdout)
-            if event.get('epoch')!=epoch or event.get('user_id')!=user_id or type(event.get('requested')) is not int:
-                db().rollback()
-                raise RuntimeError('Withdrawal receipt contents do not match')
             db().execute('''INSERT INTO withdrawal_requests(user_id,requested,remote_confirmed)
                 VALUES(?,?,1) ON CONFLICT(user_id) DO UPDATE SET remote_confirmed=1''',
                          (user_id,event['requested']))
