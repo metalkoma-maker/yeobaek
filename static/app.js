@@ -15,7 +15,9 @@ function stats(){
  if(!current)return;
  const total=count($('body').value);
  const oldRule=current.today_count_rule==='without_spaces';
- const n=current.today+(oldRule?countWithoutSpaces($('body').value)-countWithoutSpaces(current.body):total-current.total);
+ // Compare with the body loaded by this client. A server update can change
+ // total's counting rule while the current page remains open.
+ const n=current.today+(oldRule?countWithoutSpaces($('body').value)-countWithoutSpaces(current.body):total-count(current.body));
  textIfChanged('total',total.toLocaleString());textIfChanged('today',(n>0?'+':'')+n.toLocaleString());
  textIfChanged('countRule',oldRule?'전체: 공백 포함 · 오늘: 공백 제외 (내일부터 통일)':'띄어쓰기 포함 · 줄바꿈 제외 · 한국시간 기준');
 }

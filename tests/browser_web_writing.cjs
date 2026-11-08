@@ -118,6 +118,16 @@ async function performanceCheck(browser,preUndo){
    console.log('PASS: visible and saved character totals include spaces but exclude line breaks');await context.close();
   }
   {
+   const {page,context,errors}=await fixture(browser);
+   // Simulate a server rule change while this page keeps its old count function.
+   await page.evaluate(()=>render({...current,body:'가 나',total:4,today:0,today_count_rule:'with_spaces'}));
+   assert.equal(await page.locator('#today').textContent(),'0');
+   await page.evaluate(()=>{document.querySelector('#body').value='가 나!';stats();});
+   assert.equal(await page.locator('#today').textContent(),'+1');
+   assert.deepEqual(errors,[]);
+   console.log('PASS: a server count-rule change cannot make an unchanged open manuscript falsely negative');await context.close();
+  }
+  {
    const {page,context,state}=await fixture(browser);
    state.doc.today_count_rule='without_spaces';
    await page.evaluate(doc=>render(doc),state.doc);
