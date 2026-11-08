@@ -22,10 +22,13 @@ class WebPreviewTest(unittest.TestCase):
                             {'Origin': 'http://localhost:8002'}):
                 self.assertEqual(client.post('/api/login', base_url=origin,
                                  headers={**headers, **changes}, json=credentials).status_code, 403)
-            order = client.get('/api/manuscript-order', base_url=origin).json
-            self.assertEqual(client.put('/api/manuscript-order', base_url=origin,
-                             headers=headers, json=order).status_code, 403)
-            self.assertEqual(client.put('/api/manuscript-order', base_url=origin,
-                             headers={**headers, 'X-CSRF-Token': registered.json['csrf']}, json=order).status_code, 200)
+            doc = client.post('/api/manuscripts', base_url=origin,
+                              headers={**headers, 'X-CSRF-Token': registered.json['csrf']}, json={}).json
+            pin = '/api/manuscripts/' + doc['id'] + '/pin'
+            self.assertEqual(client.put(pin, base_url=origin,
+                             headers=headers, json={'pinned': True}).status_code, 403)
+            self.assertEqual(client.put(pin, base_url=origin,
+                             headers={**headers, 'X-CSRF-Token': registered.json['csrf']},
+                             json={'pinned': True}).status_code, 200)
         finally:
             module.app.wsgi_app = original

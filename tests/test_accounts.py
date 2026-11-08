@@ -90,7 +90,7 @@ class AccountTest(unittest.TestCase):
         path='/api/manuscripts/'+doc['id']
         client.put(path,json={'title':'초고','body':'지울 글','version':0},headers=headers)
         self.assertEqual(client.post(path+'/checkpoints',json={'version':1,'label':'삭제 확인용'},headers=headers).status_code,200)
-        self.assertEqual(client.put('/api/manuscript-order',json={'ids':[doc['id']],'version':0},headers=headers).status_code,200)
+        self.assertEqual(client.put(path+'/pin',json={'pinned':True},headers=headers).status_code,200)
         with module.app.app_context():
             uid=module.db().execute('SELECT id FROM users WHERE email=?',(email,)).fetchone()['id']
             module.db().execute('INSERT INTO password_resets VALUES(?,?,?)',('f'*64,uid,9999999999))
@@ -111,7 +111,7 @@ class AccountTest(unittest.TestCase):
             for table in ('users','sessions','manuscripts','manuscript_order','user_metadata','password_resets'):
                 column='id' if table=='users' else 'user_id'
                 self.assertEqual(module.db().execute(f'SELECT count(*) FROM {table} WHERE {column}=?',(uid,)).fetchone()[0],0,table)
-            for table in ('manuscript_history','manuscript_checkpoints','daily'):
+            for table in ('manuscript_history','manuscript_checkpoints','manuscript_pins','daily'):
                 self.assertEqual(module.db().execute(f'SELECT count(*) FROM {table} WHERE manuscript_id=?',(doc['id'],)).fetchone()[0],0,table)
 
 
