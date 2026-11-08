@@ -8,16 +8,19 @@ async function showList(){if(dirty&&!await save())return;$('workspace').classLis
 const count=s=>Array.from(s.replace(/[\r\n\u2028\u2029]/gu,'')).length;
 const countWithoutSpaces=s=>Array.from(s.replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/gu,'')).length;
 async function api(path,method='GET',data,options={}){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data),...options});const value=await r.json();if(!r.ok){const e=Error(value.error||'요청에 실패했습니다.');e.status=r.status;e.value=value;throw e;}return value;}
-let statsFrame=null;
+let statsFrame=null, countBase={body:null,rule:null,value:0};
 function textIfChanged(id,value){const node=$(id);if(node.textContent!==value)node.textContent=value;}
 function stats(){
  if(statsFrame!==null){cancelAnimationFrame(statsFrame);statsFrame=null;}
  if(!current)return;
- const total=count($('body').value);
+ const body=$('body').value,total=count(body);
  const oldRule=current.today_count_rule==='without_spaces';
  // Compare with the body loaded by this client. A server update can change
  // total's counting rule while the current page remains open.
- const n=current.today+(oldRule?countWithoutSpaces($('body').value)-countWithoutSpaces(current.body):total-count(current.body));
+ if(countBase.body!==current.body||countBase.rule!==oldRule){
+  countBase={body:current.body,rule:oldRule,value:oldRule?countWithoutSpaces(current.body):(body===current.body?total:count(current.body))};
+ }
+ const n=current.today+(oldRule?countWithoutSpaces(body):total)-countBase.value;
  textIfChanged('total',total.toLocaleString());textIfChanged('today',(n>0?'+':'')+n.toLocaleString());
  textIfChanged('countRule',oldRule?'전체: 공백 포함 · 오늘: 공백 제외 (내일부터 통일)':'띄어쓰기 포함 · 줄바꿈 제외 · 한국시간 기준');
 }
