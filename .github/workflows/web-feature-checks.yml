@@ -41,6 +41,7 @@ jobs:
         run: |
           export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
           node tests/browser_web_input.cjs
+          node tests/browser_draft_journal.cjs
           node tests/browser_web_writing.cjs
           node tests/browser_web_features.cjs
           node tests/browser_accounts.cjs
