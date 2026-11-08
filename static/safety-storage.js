@@ -28,8 +28,13 @@ window.YeobaekDrafts=(()=>{
   return out.sort((a,b)=>b.data.time-a.data.time);
  }
  function diff(before,after){
-  let start=0;while(start<before.length&&start<after.length&&before.charCodeAt(start)===after.charCodeAt(start))start++;
-  let end=0;while(end<before.length-start&&end<after.length-start&&before.charCodeAt(before.length-end-1)===after.charCodeAt(after.length-end-1))end++;
+  if(before===after)return {start:0,remove:0,insert:''};
+  const block=4096,limit=Math.min(before.length,after.length);let start=0;
+  while(start+block<=limit&&before.slice(start,start+block)===after.slice(start,start+block))start+=block;
+  while(start<limit&&before.charCodeAt(start)===after.charCodeAt(start))start++;
+  let end=0;
+  while(before.length-end-block>=start&&after.length-end-block>=start&&before.slice(before.length-end-block,before.length-end)===after.slice(after.length-end-block,after.length-end))end+=block;
+  while(end<before.length-start&&end<after.length-start&&before.charCodeAt(before.length-end-1)===after.charCodeAt(after.length-end-1))end++;
   return {start,remove:before.length-start-end,insert:after.slice(start,after.length-end)};
  }
  function compact(key,entry){
