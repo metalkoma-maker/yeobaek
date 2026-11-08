@@ -28,3 +28,4 @@ dist/
 /deploy/target.example.json
 /docs/github-actions-deployment-status.md
 /docs/github-actions-windows-guide.md
+.ios-signing/

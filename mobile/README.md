@@ -10,6 +10,8 @@ Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 �
 
 Apple 서명 정보가 EAS에 준비되면 코덱스가 `mobile-build/ios-device-*` 브랜치를 푸시해 설치용 빌드를 시작할 수 있습니다. 이 작업은 운영 API의 공개 식별 응답을 읽기 전용으로 확인하고 앱 검사를 거친 뒤 `production` 프로필로 IPA를 빌드합니다. 실제 운영 로그인·원고 저장은 빌드 과정에서 실행하지 않습니다. 빌드 완료 뒤 TestFlight 업로드와 아이폰 설치는 별도 단계이며 자동 제출하지 않습니다. 2026-11-08에는 운영 API 확인과 앱 검사까지 성공했으나 EAS의 iOS 서명 정보가 없어 비대화식 빌드가 중단됐습니다. Apple Developer Individual 계정에서는 Account Holder가 최초 배포 인증서와 프로비저닝 프로필을 만들어야 합니다. 모바일 Codespace에서 `bash tools/setup_ios_signing_codespace.sh`를 실행해 소설여백 Expo 계정에 로그인한 다음, 아내분이 본인 Apple 계정으로 iOS `production` 서명 설정을 완료합니다. 비밀번호와 인증 코드는 채팅이나 저장소에 보내지 않습니다. 설정 뒤 코덱스가 빌드를 재실행합니다.
 
+Apple 계정 비밀번호 로그인에서 EAS CLI가 `Received undefined`로 실패하면 같은 로그인을 반복하지 않습니다. Apple Account Holder가 App Store Connect에서 **Admin 권한의 Team API Key**를 발급하고, `.p8` 파일을 Codespace의 저장소 루트 `.ios-signing/`에 업로드한 뒤 `bash tools/setup_ios_signing_api_key_codespace.sh`를 실행합니다. 스크립트가 Key ID, Issuer ID, Team ID를 터미널에서 물어보고 Apple API 키로 `production` 서명 설정을 진행합니다. `.ios-signing/`은 Git에서 제외되며, 유효한 키는 실행 중 임시 폴더로 옮겨 종료 시 삭제합니다. 키 파일·값은 채팅이나 저장소에 커밋하지 않습니다.
+
 ## 코덱스 채팅에서 검토하기
 
 PR3의 모바일 파일을 업데이트하면 GitHub Actions의 **모바일 앱 검증**이 타입·저장 보호 테스트와 iOS 번들 두 모드를 검사합니다. **소설여백 아이폰 임시 검토 주소** 작업은 가짜 API와 Expo 서버를 약 115분 동안 실행하고 외부 로그인·원고 조회와 Expo 서버 응답을 검사합니다. 검토 주소가 만료되면 코덱스가 `mobile-preview/run-*` 브랜치를 푸시해 새 미리보기를 시작할 수 있습니다. 코덱스가 작업 로그에서 `MOBILE_PREVIEW_URL`을 확인해 채팅에 전달합니다. 아이폰에서는 코덱스가 제공한 QR을 기본 카메라로 스캔해 Expo Go로 엽니다. 테스트 웹 주소도 같은 채팅에 전달합니다. 코드스페이스나 PowerShell 명령은 필요하지 않습니다.
