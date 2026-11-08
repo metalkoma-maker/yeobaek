@@ -29,3 +29,4 @@ dist/
 /docs/github-actions-deployment-status.md
 /docs/github-actions-windows-guide.md
 .ios-signing/
+AuthKey_*.p8

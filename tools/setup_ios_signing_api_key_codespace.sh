@@ -9,9 +9,9 @@ fi
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 key_dir="$repo/.ios-signing"
 mkdir -p -- "$key_dir"
-mapfile -t keys < <(find "$key_dir" -maxdepth 1 -type f -name 'AuthKey_*.p8' -print)
+mapfile -t keys < <(find "$key_dir" "$repo/tools" -maxdepth 1 -type f -name 'AuthKey_*.p8' -print)
 if (( ${#keys[@]} != 1 )); then
-  echo '.ios-signing 폴더에 Apple에서 받은 AuthKey_*.p8 파일 하나만 넣어 주세요.' >&2
+  echo '왼쪽 탐색기의 tools 폴더에 Apple에서 받은 AuthKey_*.p8 파일 하나만 넣어 주세요.' >&2
   exit 1
 fi
 
