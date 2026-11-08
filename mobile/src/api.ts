@@ -57,7 +57,7 @@ export class Api {
       const check = await fetch(this.origin + path, { signal: controller.signal, cache: 'no-store' });
       const marker = check.ok ? await check.json() : null;
       const valid = this.mode === 'production'
-        ? marker?.api === 'manuscript-order-v1'
+        ? marker?.api === 'history-account-v1'
         : marker?.syntheticOnly === true && marker?.protocol === 'yeobaek-mobile-test-v1';
       if (!valid) throw Error('서버를 확인하지 못해 로그인을 중단했습니다.');
     } finally { clearTimeout(timer); }

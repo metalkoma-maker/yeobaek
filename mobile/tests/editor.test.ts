@@ -143,7 +143,7 @@ test('production login checks the server marker before sending credentials', asy
     if (calls.length === 1) {
       assert.equal(url, PRODUCTION_ORIGIN + '/__deployment_health__');
       assert.equal(options?.body, undefined);
-      return new Response(JSON.stringify({ api: 'manuscript-order-v1' }), { status: 200 });
+      return new Response(JSON.stringify({ api: 'history-account-v1' }), { status: 200 });
     }
     assert.equal(url, PRODUCTION_ORIGIN + '/api/login');
     assert.equal(options?.method, 'POST');

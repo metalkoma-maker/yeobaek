@@ -25,7 +25,7 @@ jobs:
           from urllib.request import urlopen
           with urlopen('https://yeobaek-write.duckdns.org/__deployment_health__', timeout=15) as response:
               marker = json.load(response)
-          if marker != {'api': 'manuscript-order-v1'}:
+          if marker != {'api': 'history-account-v1'}:
               raise SystemExit('Production API identity did not match; refusing device build')
           print('Production API identity verified (read-only)')
           PY
