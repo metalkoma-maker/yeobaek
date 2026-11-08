@@ -39,6 +39,7 @@ def init():
         CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY,applied INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS daily(manuscript_id TEXT REFERENCES manuscripts(id) ON DELETE CASCADE,day TEXT NOT NULL,delta INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(manuscript_id,day));
         CREATE TABLE IF NOT EXISTS manuscript_order(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,ids TEXT NOT NULL,version INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS manuscript_pins(manuscript_id TEXT PRIMARY KEY REFERENCES manuscripts(id) ON DELETE CASCADE,pinned_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,started INTEGER NOT NULL,count INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS password_resets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
         ''')
@@ -289,9 +290,13 @@ def delete_account():
     response.delete_cookie('novel_session',secure=SECURE,samesite='Lax')
     return response
 
-def owned(mid): return db().execute('SELECT * FROM manuscripts WHERE id=? AND user_id=?',(mid,g.user['user_id'])).fetchone()
+def owned(mid):
+    return db().execute('''SELECT m.*,p.pinned_at FROM manuscripts m
+        LEFT JOIN manuscript_pins p ON p.manuscript_id=m.id
+        WHERE m.id=? AND m.user_id=?''',(mid,g.user['user_id'])).fetchone()
 def pack(row):
     data=dict(row); data.pop('user_id',None)
+    data['pinned']=data.pop('pinned_at',None) is not None
     delta=db().execute('SELECT delta FROM daily WHERE manuscript_id=? AND day=?',(data['id'],day())).fetchone()
     data.update(total=count(data['body']),today=delta[0] if delta else 0,day=day(),
                 today_count_rule='without_spaces' if legacy_count_day() else 'with_spaces')
@@ -350,43 +355,38 @@ def next_copy_title(title, user_id):
     return base[:200-len(suffix)]+suffix
 
 def manuscript_list_state():
-    rows=db().execute('SELECT * FROM manuscripts WHERE user_id=? ORDER BY updated DESC,rowid DESC',(g.user['user_id'],)).fetchall()
-    saved=db().execute('SELECT ids,version FROM manuscript_order WHERE user_id=?',(g.user['user_id'],)).fetchone()
-    if saved:
-        rank={mid:i for i,mid in enumerate(json.loads(saved['ids']))}
-        # New manuscripts appear first; writing never moves manually ordered items.
-        rows.sort(key=lambda row:(1,rank[row['id']]) if row['id'] in rank else (0,0))
-    return rows,{'ids':[row['id'] for row in rows],'version':saved['version'] if saved else 0}
+    rows=db().execute('''SELECT m.*,p.pinned_at FROM manuscripts m
+        LEFT JOIN manuscript_pins p ON p.manuscript_id=m.id
+        WHERE m.user_id=?
+        ORDER BY p.pinned_at IS NULL,p.pinned_at ASC,m.updated DESC,m.rowid DESC''',(g.user['user_id'],)).fetchall()
+    return rows,{'ids':[row['id'] for row in rows],'version':0}
 
 @app.route('/api/manuscript-order',methods=['GET','PUT'])
 def manuscript_order():
     if request.method=='GET':
         return jsonify(manuscript_list_state()[1])
+    return fail('원고는 최근 수정한 순서대로 표시됩니다. 페이지를 새로고침해 주세요.',409)
+
+@app.put('/api/manuscripts/<mid>/pin')
+def pin_manuscript(mid):
     data=request.get_json()
-    if not isinstance(data,dict): return fail('원고 순서를 확인해 주세요.')
-    ids=data.get('ids'); version=data.get('version')
-    if (not isinstance(ids,list) or any(not isinstance(mid,str) or not 1<=len(mid)<=128 for mid in ids)
-            or len(set(ids))!=len(ids) or type(version) is not int or version<0):
-        return fail('원고 순서를 확인해 주세요.')
+    if not isinstance(data,dict) or type(data.get('pinned')) is not bool:
+        return fail('고정 상태를 확인해 주세요.')
     db().execute('BEGIN IMMEDIATE')
-    _,current=manuscript_list_state()
-    if version!=current['version'] or set(ids)!=set(current['ids']):
-        db().rollback()
-        return jsonify(error='다른 기기에서 원고 목록이 바뀌었습니다. 확인 후 다시 옮겨 주세요.',current=current),409
-    if ids==current['ids']:
-        db().rollback()
-        return jsonify(current)
-    updated={'ids':ids,'version':current['version']+1}
-    db().execute('INSERT INTO manuscript_order(user_id,ids,version) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET ids=excluded.ids,version=excluded.version',
-                 (g.user['user_id'],json.dumps(ids),updated['version']))
+    row=owned(mid)
+    if not row: db().rollback(); return fail('원고를 찾을 수 없습니다.',404)
+    if data['pinned']:
+        db().execute('INSERT OR IGNORE INTO manuscript_pins VALUES(?,?)',(mid,time.time_ns()))
+    else:
+        db().execute('DELETE FROM manuscript_pins WHERE manuscript_id=?',(mid,))
     db().commit()
-    return jsonify(updated)
+    return jsonify(pack(owned(mid)))
 
 @app.route('/api/manuscripts',methods=['GET','POST'])
 def manuscripts():
     if request.method=='GET': return jsonify([pack(row) for row in manuscript_list_state()[0]])
     mid=secrets.token_hex(16)
-    db().execute('INSERT INTO manuscripts(id,user_id,title,updated) VALUES(?,?,?,?)',(mid,g.user['user_id'],'제목 없는 원고',int(time.time()))); db().commit()
+    db().execute('INSERT INTO manuscripts(id,user_id,title,updated) VALUES(?,?,?,?)',(mid,g.user['user_id'],'제목 없는 원고',time.time())); db().commit()
     return jsonify(pack(owned(mid))),201
 
 @app.route('/api/manuscripts/<mid>',methods=['GET','PUT'])
@@ -403,7 +403,7 @@ def manuscript(mid):
         result=pack(row); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
     if title == row['title'] and body == row['body']:
         result=pack(row); db().rollback(); return jsonify(result)
-    save_manuscript(mid,row,title,body,int(time.time()))
+    save_manuscript(mid,row,title,body,time.time())
     db().commit(); return jsonify(pack(owned(mid)))
 
 @app.post('/api/manuscripts/<mid>/copy')
@@ -422,7 +422,7 @@ def copy_manuscript(mid):
     name=title.strip() if title is not None else next_copy_title(source['title'],g.user['user_id'])
     new_id=secrets.token_hex(16)
     db().execute('INSERT INTO manuscripts(id,user_id,title,body,version,updated) VALUES(?,?,?,?,0,?)',
-                 (new_id,g.user['user_id'],name,source['body'],int(time.time())))
+                 (new_id,g.user['user_id'],name,source['body'],time.time()))
     db().commit()
     return jsonify(pack(owned(new_id))),201
 
@@ -457,7 +457,7 @@ def checkpoints(mid):
     source=current if current['version']==version else db().execute("SELECT * FROM manuscript_checkpoints WHERE manuscript_id=? AND version=? AND kind!='legacy'",(mid,version)).fetchone()
     if source is None: source=db().execute('SELECT * FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,version)).fetchone()
     if source is None: db().rollback(); return fail('보관할 버전을 찾을 수 없습니다.',404)
-    checkpoint(mid,source,'manual',int(time.time()),label.strip())
+    checkpoint(mid,source,'manual',time.time(),label.strip())
     db().commit()
     return jsonify(version=version,label=label.strip(),kind='manual')
 
@@ -472,7 +472,7 @@ def session_checkpoint(mid):
     if current['version']!=version:
         result=pack(current); db().rollback(); return jsonify(error='다른 기기에서 수정된 원고가 있습니다.',current=result),409
     if version:
-        now=int(time.time())
+        now=time.time()
         checkpoint(mid,current,'auto',now)
         prune_checkpoints(mid,now)
     db().commit()
@@ -499,7 +499,7 @@ def restore_manuscript(mid):
     if source is None: source=db().execute('SELECT title,body FROM manuscript_history WHERE manuscript_id=? AND version=?',(mid,source_version)).fetchone()
     if source is None: db().rollback(); return fail('복원할 버전을 찾을 수 없습니다.',404)
     if source['title']!=current['title'] or source['body']!=current['body']:
-        save_manuscript(mid,current,source['title'],source['body'],int(time.time()),keep_before_restore=True)
+        save_manuscript(mid,current,source['title'],source['body'],time.time(),keep_before_restore=True)
     db().commit(); return jsonify(pack(owned(mid)))
 
 @app.get('/')

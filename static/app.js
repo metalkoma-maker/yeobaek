@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let csrf='',docs=[],current=null,dirty=false,timer=null,saving=false,conflict=null,register=false,composing=false,passwordRecoveryAvailable=false;
+let csrf='',docs=[],current=null,dirty=false,timer=null,saving=false,conflict=null,register=false,composing=false,passwordRecoveryAvailable=false,listEpoch=0;
 const mobileLayout=window.matchMedia('(max-width:720px)');
 const modifiedFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 function modifiedDate(value){const date=new Date(Number(value)*1000);return value!=null&&Number.isFinite(date.getTime())?'최근 수정 '+modifiedFormat.format(date):'최근 수정일 없음';}
@@ -8,14 +8,19 @@ async function showList(){if(dirty&&!await save())return;$('workspace').classLis
 const count=s=>Array.from(s.replace(/[\r\n\u2028\u2029]/gu,'')).length;
 const countWithoutSpaces=s=>Array.from(s.replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/gu,'')).length;
 async function api(path,method='GET',data,options={}){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data),...options});const value=await r.json();if(!r.ok){const e=Error(value.error||'요청에 실패했습니다.');e.status=r.status;e.value=value;throw e;}return value;}
-let statsFrame=null;
+let statsFrame=null, countBase={body:null,rule:null,value:0};
 function textIfChanged(id,value){const node=$(id);if(node.textContent!==value)node.textContent=value;}
 function stats(){
  if(statsFrame!==null){cancelAnimationFrame(statsFrame);statsFrame=null;}
  if(!current)return;
- const total=count($('body').value);
+ const body=$('body').value,total=count(body);
  const oldRule=current.today_count_rule==='without_spaces';
- const n=current.today+(oldRule?countWithoutSpaces($('body').value)-countWithoutSpaces(current.body):total-current.total);
+ // Compare with the body loaded by this client. A server update can change
+ // total's counting rule while the current page remains open.
+ if(countBase.body!==current.body||countBase.rule!==oldRule){
+  countBase={body:current.body,rule:oldRule,value:oldRule?countWithoutSpaces(current.body):(body===current.body?total:count(current.body))};
+ }
+ const n=current.today+(oldRule?countWithoutSpaces(body):total)-countBase.value;
  textIfChanged('total',total.toLocaleString());textIfChanged('today',(n>0?'+':'')+n.toLocaleString());
  textIfChanged('countRule',oldRule?'전체: 공백 포함 · 오늘: 공백 제외 (내일부터 통일)':'띄어쓰기 포함 · 줄바꿈 제외 · 한국시간 기준');
 }
@@ -52,116 +57,55 @@ for(const [id,redo] of [['undoEdit',false],['redoEdit',true]]){
 }
 window.addEventListener('resize',scheduleBodySize);
 $('body').addEventListener('yeobaek-font-change',scheduleBodySize);
-let orderVersion=null,orderEpoch=0,orderBusy=false,draggedId=null,ignoreDocClickUntil=0,dragPointerY=null,dragScrollFrame=0;
-function orderStatus(message){const node=$('listOrderStatus');if(node)node.textContent=message;}
-function arrangeDocs(items,ids){
- const rank=new Map(ids.map((id,i)=>[id,i]));
- return [...items].sort((a,b)=>(rank.has(a.id)?1:0)-(rank.has(b.id)?1:0)||(rank.get(a.id)??0)-(rank.get(b.id)??0));
+function recentDocs(items){
+ return [...items].sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned))||(a.pinned?0:Number(b.updated)-Number(a.updated)));
 }
-async function fetchListState(){
- const [items,order]=await Promise.all([api('/manuscripts'),api('/manuscript-order').catch(()=>null)]);
- return {items:order?arrangeDocs(items,order.ids):items,version:order?.version??null};
-}
-function acceptListState(state){
- docs=state.items;orderVersion=state.version;list();
- if(orderVersion===null)orderStatus('원고 순서를 불러오지 못했습니다. 목록을 다시 열어 주세요.');
-}
+async function fetchListState(){return recentDocs(await api('/manuscripts'));}
+function acceptListState(items){docs=recentDocs(items);list();}
 async function refreshDocuments(){
- const epoch=orderEpoch,editing=editEpoch,state=await fetchListState();
- if(epoch!==orderEpoch||editing!==editEpoch||dirty||saving||composing||recoveryReview||orderBusy||draggedId)return;
- acceptListState(state);
-}
-function clearDropTarget(){for(const node of $('documents').children)node.classList.remove('dropBefore','dropAfter');}
-function dropSlotAt(y){
- const rows=[...$('documents').children];
- for(let i=0;i<rows.length;i++)if(y<rows[i].getBoundingClientRect().top+rows[i].offsetHeight/2)return i;
- return rows.length;
-}
-function showDropSlot(slot){
- clearDropTarget();const rows=[...$('documents').children],from=docs.findIndex(d=>d.id===draggedId);
- if(!rows.length||from<0||slot-(slot>from?1:0)===from)return;
- (rows[slot]||rows[rows.length-1]).classList.add(slot===rows.length?'dropAfter':'dropBefore');
-}
-function stopDragScroll(){if(dragScrollFrame)cancelAnimationFrame(dragScrollFrame);dragScrollFrame=0;dragPointerY=null;}
-function scrollDraggedList(){
- dragScrollFrame=0;if(!draggedId||dragPointerY===null)return;
- const nav=$('documents'),bounds=nav.getBoundingClientRect(),edge=48;
- const amount=dragPointerY<bounds.top+edge?-Math.min(22,Math.max(5,(bounds.top+edge-dragPointerY)/2)):
-  dragPointerY>bounds.bottom-edge?Math.min(22,Math.max(5,(dragPointerY-(bounds.bottom-edge))/2)):0;
- if(amount){const before=nav.scrollTop;nav.scrollTop+=amount;if(nav.scrollTop!==before)showDropSlot(dropSlotAt(dragPointerY));}
- dragScrollFrame=requestAnimationFrame(scrollDraggedList);
-}
-function dropDocumentAt(source,slot){
- const ids=docs.map(d=>d.id),from=ids.indexOf(source);if(from<0)return;
- ids.splice(from,1);ids.splice(slot-(slot>from?1:0),0,source);return storeOrder(ids);
-}
-$('sidebar').addEventListener('dragover',e=>{
- if(!draggedId||orderBusy)return;
- e.preventDefault();e.dataTransfer.dropEffect='move';dragPointerY=e.clientY;
- showDropSlot(dropSlotAt(e.clientY));
- if(!dragScrollFrame)dragScrollFrame=requestAnimationFrame(scrollDraggedList);
-});
-$('sidebar').addEventListener('drop',e=>{
- if(!draggedId||orderBusy)return;
- e.preventDefault();const source=draggedId,slot=dropSlotAt(e.clientY);
- draggedId=null;ignoreDocClickUntil=performance.now()+250;stopDragScroll();clearDropTarget();void dropDocumentAt(source,slot);
-});
-$('sidebar').addEventListener('dragleave',e=>{
- if(!e.currentTarget.contains(e.relatedTarget)){stopDragScroll();clearDropTarget();}
-});
-async function storeOrder(ids){
- if(orderBusy||orderVersion===null||ids.every((id,i)=>docs[i]?.id===id))return;
- const previous=docs.map(d=>d.id),version=orderVersion;
- orderBusy=true;orderEpoch++;docs=arrangeDocs(docs,ids);list();orderStatus('원고 순서 저장 중…');
- try{
-  const result=await api('/manuscript-order','PUT',{ids,version});
-  docs=arrangeDocs(docs,result.ids);orderVersion=result.version;orderStatus('');
- }catch(e){
-  docs=arrangeDocs(docs,previous);
-  if(e.status===409){
-   try{acceptListState(await fetchListState());}catch{}
-   orderStatus('다른 기기에서 목록이 바뀌었습니다. 확인 후 다시 옮겨 주세요.');
-  }else orderStatus('원고 순서를 저장하지 못했습니다. 다시 옮겨 주세요.');
- }finally{orderBusy=false;list();}
-}
-function moveDocument(source,target,after){
- const ids=docs.map(d=>d.id);if(source===target||!ids.includes(source)||!ids.includes(target))return;
- ids.splice(ids.indexOf(source),1);ids.splice(ids.indexOf(target)+(after?1:0),0,source);return storeOrder(ids);
+ const editing=editEpoch,listing=listEpoch,items=await fetchListState();
+ if(editing!==editEpoch||listing!==listEpoch||dirty||saving||composing||recoveryReview||pinBusy.size)return;
+ acceptListState(items);
 }
 function list(){
- if(draggedId)return; // Do not replace the native drag source during autosave.
  $('documents').replaceChildren();
  for(const d of docs){
   const row=document.createElement('div');row.className='documentRow';
   const b=document.createElement('button');b.dataset.id=d.id;b.className='documentCard'+(current?.id===d.id?' active':'');
-  b.draggable=!orderBusy&&orderVersion!==null;b.title='드래그하여 순서 변경 · Alt+↑/↓';
-  const handle=document.createElement('span');handle.className='orderHandle';handle.textContent='⠿';handle.setAttribute('aria-hidden','true');
   const t=document.createElement('b');t.textContent=d.title||'제목 없는 원고';
   const s=document.createElement('small');s.textContent=d.total.toLocaleString()+'자';
   const date=document.createElement('small');date.className='modifiedDate';date.textContent=modifiedDate(d.updated);
-  b.append(handle,t,s,date);b.onclick=()=>{if(!draggedId&&performance.now()>ignoreDocClickUntil)openDoc(d.id);};
-  b.addEventListener('dragstart',e=>{
-   if(orderBusy||orderVersion===null||composing){e.preventDefault();return;}
-   draggedId=d.id;b.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',d.id);
-  });
-  b.addEventListener('dragend',()=>{draggedId=null;ignoreDocClickUntil=performance.now()+250;stopDragScroll();clearDropTarget();list();});
-  b.addEventListener('keydown',async e=>{
-   if(!e.altKey||!['ArrowUp','ArrowDown'].includes(e.key)||orderBusy||orderVersion===null)return;
-   const index=docs.findIndex(x=>x.id===d.id),target=docs[index+(e.key==='ArrowUp'?-1:1)];if(!target)return;
-   e.preventDefault();await moveDocument(d.id,target.id,e.key==='ArrowDown');
-   [...$('documents').children].find(node=>node.querySelector('.documentCard')?.dataset.id===d.id)?.querySelector('.documentCard')?.focus();
-  });
+  b.append(t,s,date);b.onclick=()=>openDoc(d.id);
+  const pin=document.createElement('button');pin.type='button';pin.className='documentPin'+(d.pinned?' pinned':'');
+  pin.dataset.pinId=d.id;pin.disabled=pinBusy.has(d.id);
+  pin.setAttribute('aria-label',(d.title||'제목 없는 원고')+(d.pinned?' 상단 고정 해제':' 상단 고정'));
+  pin.setAttribute('aria-pressed',String(Boolean(d.pinned)));
+  pin.title=d.pinned?'상단 고정 해제':'상단 고정';
+  pin.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8v2l-1.5 1.5V11L17 14v1H7v-1l2.5-3V6.5L8 5V3Z"/><path d="M12 15v6"/></svg>';
+  pin.onclick=()=>void togglePin(d,pin);
   const more=document.createElement('button');more.type='button';more.className='documentMore';more.textContent='⋯';
   more.setAttribute('aria-label',(d.title||'제목 없는 원고')+'을 다른 이름으로 저장');
   more.title='다른 이름으로 저장';
   more.onclick=()=>void openCopyDialog(d.id);
-  row.append(b,more);$('documents').append(row);
+  row.append(b,pin,more);$('documents').append(row);
  }
+}
+const pinBusy=new Set();
+async function togglePin(doc,button){
+ if(pinBusy.has(doc.id))return;
+ $('pinError').hidden=true;
+ pinBusy.add(doc.id);listEpoch++;button.disabled=true;
+ try{
+  const updated=await api('/manuscripts/'+doc.id+'/pin','PUT',{pinned:!doc.pinned});
+  docs=recentDocs(docs.map(d=>d.id===doc.id?{...d,pinned:updated.pinned}:d));
+  if(current?.id===doc.id)current={...current,pinned:updated.pinned};
+ }catch(e){$('pinError').textContent=e.message+' 다시 눌러 주세요.';$('pinError').hidden=false;}
+ finally{pinBusy.delete(doc.id);list();$('documents').querySelector('[data-pin-id="'+doc.id+'"]')?.focus({preventScroll:true});}
 }
 function render(d,navigate=false){recoveryReview=false;$('retry').textContent='다시 저장';$('historyButton').disabled=false;current=d;dirty=false;conflict=null;if($('title').value!==d.title)$('title').value=d.title;if($('body').value!==d.body)$('body').value=d.body;$('empty').hidden=true;$('editor').hidden=false;$('download').disabled=false;$('notice').hidden=true;$('saveStatus').textContent='저장됨';stats();list();$('closeList').hidden=false;if(navigate)showEditor();syncEditingHistory(d.id);}
 async function openDoc(id){if(saving)return;if(dirty&&!await save())return;void keepSessionPoint();try{const epoch=editEpoch;const d=await api('/manuscripts/'+id);if(dirty||saving||epoch!==editEpoch)return;render(d,true);}catch(e){notice(e.message);}}
 function notice(message,isConflict=false){$('noticeText').textContent=message;$('notice').hidden=false;$('useServer').hidden=!isConflict;$('retry').hidden=isConflict;}
-async function save(manual=false){if(recoveryReview&&!manual)return false;clearTimeout(timer);if(!dirty)return true;if(saving)return false;if(conflict)return false;saving=true;const id=current.id,title=$('title').value,body=$('body').value;$('saveStatus').textContent='저장 중…';try{const d=await api('/manuscripts/'+id,'PUT',{title,body,version:current.version});clearSavedDraft(id,title,body);recoveryReview=false;current=d;docs=docs.map(x=>x.id===id?d:x);dirty=$('title').value!==title||$('body').value!==body;if(dirty){persistDraft();scheduleStats();}else{stats();list();}$('notice').hidden=true;$('saveStatus').textContent=dirty?'저장 대기':'저장됨';return !dirty;}catch(e){$('saveStatus').textContent='저장되지 않음';if(e.status===409){conflict=e.value.current;notice('다른 기기에서 원고가 수정되었습니다. 현재 입력은 유지됩니다. 내 원고를 내려받은 뒤 서버 원고를 열어 내용을 비교해 주세요.',true);}else{notice(e.message+' 입력한 내용은 이 화면에 유지됩니다. 다시 저장하거나 내려받아 주세요.');}return false;}finally{saving=false;if(dirty&&!conflict&&!recoveryReview&&$('notice').hidden)timer=setTimeout(save,700);}}
+async function save(manual=false){if(recoveryReview&&!manual)return false;clearTimeout(timer);if(!dirty)return true;if(saving)return false;if(conflict)return false;saving=true;const id=current.id,title=$('title').value,body=$('body').value;$('saveStatus').textContent='저장 중…';try{const d=await api('/manuscripts/'+id,'PUT',{title,body,version:current.version});clearSavedDraft(id,title,body);recoveryReview=false;current=d;docs=recentDocs(docs.map(x=>x.id===id?d:x));dirty=$('title').value!==title||$('body').value!==body;if(dirty){persistDraft();scheduleStats();}else{stats();list();}$('notice').hidden=true;$('saveStatus').textContent=dirty?'저장 대기':'저장됨';return !dirty;}catch(e){$('saveStatus').textContent='저장되지 않음';if(e.status===409){conflict=e.value.current;notice('다른 기기에서 원고가 수정되었습니다. 현재 입력은 유지됩니다. 내 원고를 내려받은 뒤 서버 원고를 열어 내용을 비교해 주세요.',true);}else{notice(e.message+' 입력한 내용은 이 화면에 유지됩니다. 다시 저장하거나 내려받아 주세요.');}return false;}finally{saving=false;if(dirty&&!conflict&&!recoveryReview&&$('notice').hidden)timer=setTimeout(save,700);}}
 async function keepSessionPoint(background=false){
  const id=current?.id;if(!id||!csrf||conflict||recoveryReview||composing)return;
  if(dirty&&(saving||!await save()))return;
@@ -190,7 +134,7 @@ function downloadedAt(date){
  return parts.year+'-'+parts.month+'-'+parts.day+' '+parts.hour+':'+parts.minute+':'+parts.second+' (한국시간)';
 }
 function download(){if(!current)return;const stamp='내려받은 시각: '+downloadedAt(new Date());const blob=new Blob([stamp+'\n\n'+$('title').value+'\n\n'+$('body').value],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=($('title').value||'원고').replace(/[\\/:*?"<>|]/g,'_')+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-async function newDoc(){if(saving)return;if(dirty&&!await save())return;try{const d=await api('/manuscripts','POST',{});orderEpoch++;docs.unshift(d);if(dirty||saving){list();return;}render(d,true);$('title').focus();}catch(e){notice(e.message);}}
+async function newDoc(){if(saving)return;if(dirty&&!await save())return;try{const d=await api('/manuscripts','POST',{});listEpoch++;docs=recentDocs([d,...docs]);if(dirty||saving){list();return;}render(d,true);$('title').focus();}catch(e){notice(e.message);}}
 function suggestedCopyTitle(source){
  const base=(source.title.trim()||'제목 없는 원고').replace(/ · [2-9][0-9]*[고교]$/u,'');
  let number=1;
@@ -202,7 +146,7 @@ function suggestedCopyTitle(source){
 }
 let copySource=null,copyBusy=false;
 async function openCopyDialog(id){
- if(copyBusy||saving||orderBusy||draggedId||$('copyDialog').open)return;
+ if(copyBusy||saving||$('copyDialog').open)return;
  if(dirty&&!await save())return;
  try{
   const source=await api('/manuscripts/'+id);
@@ -220,8 +164,8 @@ $('copyConfirm').onclick=async()=>{
  copyBusy=true;$('copyConfirm').disabled=true;$('copyCancel').disabled=true;
  try{
   const created=await api('/manuscripts/'+copySource.id+'/copy','POST',{version:copySource.version,title});
-  orderEpoch++;
-  try{acceptListState(await fetchListState());}catch{docs.unshift(created);list();}
+  listEpoch++;
+  try{acceptListState(await fetchListState());}catch{docs=recentDocs([created,...docs]);list();}
   render(created,true);$('copyDialog').close();$('title').focus();
  }catch(e){$('copyMessage').textContent=e.status===409?'다른 기기에서 원고가 수정됐습니다. 창을 닫고 다시 확인해 주세요.':e.message;}
  finally{copyBusy=false;$('copyConfirm').disabled=false;$('copyCancel').disabled=false;}
@@ -237,18 +181,18 @@ window.addEventListener('pagehide',()=>{if(dirty)persistDraft();void keepSession
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void keepSessionPoint(true);});
 let refreshing=false;
 setInterval(async()=>{
- if(dirty||saving||composing||recoveryReview||document.hidden||refreshing||orderBusy||draggedId||$('safetyDialog').open||$('copyDialog').open)return;
- const epoch=editEpoch;
+ if(dirty||saving||composing||recoveryReview||pinBusy.size||document.hidden||refreshing||$('safetyDialog').open||$('copyDialog').open)return;
+ const epoch=editEpoch,listing=listEpoch;
  refreshing=true;
  try{
   if(mobileLayout.matches&&$('workspace').classList.contains('view-list')){
-   const sequence=orderEpoch,latest=await fetchListState();if(!dirty&&!saving&&!composing&&!orderBusy&&!draggedId&&sequence===orderEpoch&&epoch===editEpoch)acceptListState(latest);
+   const latest=await fetchListState();if(!dirty&&!saving&&!composing&&!pinBusy.size&&listing===listEpoch&&epoch===editEpoch)acceptListState(latest);
   }else if(current){
    const id=current.id,d=await api('/manuscripts/'+id);
    if(!dirty&&!saving&&!composing&&epoch===editEpoch&&current?.id===id&&(d.version!==current.version||d.day!==current.day)){
     docs=docs.map(x=>x.id===id?d:x);render(d);
    }
-   if(!dirty&&!saving&&!composing&&!orderBusy&&!draggedId&&epoch===editEpoch)await refreshDocuments();
+   if(!dirty&&!saving&&!composing&&epoch===editEpoch)await refreshDocuments();
   }
  }catch{}finally{refreshing=false;}
 },10000);

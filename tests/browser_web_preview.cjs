@@ -30,10 +30,10 @@ async function forwardPreview(context) {
     await page.locator('#workspace').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#documents .documentCard').count(), 3);
     const before = await page.locator('#documents .documentCard').evaluateAll(nodes => nodes.map(node => node.dataset.id));
-    const saved = page.waitForResponse(response => response.url().endsWith('/api/manuscript-order') && response.request().method() === 'PUT');
-    await page.locator('[data-id="' + before[2] + '"]').dragTo(page.locator('[data-id="' + before[0] + '"]'), { targetPosition: { x: 20, y: 5 } });
+    const saved = page.waitForResponse(response => response.url().endsWith('/api/manuscripts/' + before[2] + '/pin') && response.request().method() === 'PUT');
+    await page.locator('[data-pin-id="' + before[2] + '"]').click();
     assert.equal((await saved).status(), 200);
-    await page.waitForFunction(() => !orderBusy);
+    await page.waitForFunction(id => docs[0].id === id, before[2]);
     const expected = [before[2], before[0], before[1]];
     assert.deepEqual(await page.locator('#documents .documentCard').evaluateAll(nodes => nodes.map(node => node.dataset.id)), expected);
     const other = await browser.newContext();
@@ -72,6 +72,6 @@ async function forwardPreview(context) {
     assert.deepEqual(errors, []);
     if (process.env.PREVIEW_SCREENSHOT) await page.screenshot({ path: process.env.PREVIEW_SCREENSHOT });
     await other.close(); await context.close();
-    console.log('PASS: real preview has 3 fake documents; login, drag, download and password reset work');
+    console.log('PASS: real preview has 3 fake documents; login, pin, download and password reset work');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
