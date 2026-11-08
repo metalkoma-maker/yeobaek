@@ -148,12 +148,12 @@ async function performanceCheck(browser,preUndo){
    });
    assert(dimensions.titleBottom<dimensions.paneTop);assert(dimensions.bodyTop<dimensions.paneTop);assert(dimensions.headerTop>=0&&dimensions.headerBottom<viewport.height);assert.equal(dimensions.windowScroll,0);assert.equal(dimensions.horizontal,false);
    // Font style changes immediately; the textarea height follows on its RAF.
-   await page.click('#fontToggle');await page.locator('[data-size="18"]').click();await page.waitForFunction(()=>bodySizeFrame===null && document.querySelector('#body').style.height!=='' && getComputedStyle(document.querySelector('#body')).fontSize==='24px');
+   await page.click('#fontToggle');await page.locator('[data-size="18"]').click();await page.waitForFunction(()=>{const body=document.querySelector('#body');return bodySizeFrame===null&&body.style.height!==''&&getComputedStyle(body).fontSize==='24px'&&body.scrollHeight<=body.clientHeight+1;});
    assert.equal(await page.locator('#title').evaluate(n=>n.getBoundingClientRect().width),originalWidth);
    const fit=await page.locator('#body').evaluate(n=>({scroll:n.scrollHeight,height:n.clientHeight}));assert(fit.scroll<=fit.height+1);
    await page.locator('#editor').evaluate(n=>n.scrollTop=0);assert.equal(await page.locator('#body').evaluate(n=>n.scrollTop),0);
    const bodyPadding=await page.locator('#body').evaluate(n=>parseFloat(getComputedStyle(n).paddingLeft));assert.equal(bodyPadding,viewport.width<720?24:Math.max(50,(viewport.width-272-720-15)/2));
-   await end(page);await page.keyboard.press('Backspace');await page.waitForFunction(()=>bodySizeFrame===null);assert(await page.locator('#editor').evaluate(n=>n.scrollTop)>100);
+   await end(page);await page.keyboard.press('Backspace');await page.waitForFunction(()=>bodySizeFrame===null&&bodySizeTimer===null);assert(await page.locator('#editor').evaluate(n=>n.scrollTop)>100);
    await page.screenshot({path:'/tmp/yeobaek-writing-'+viewport.width+'.png'});
    console.log('PASS: title/body share scroll, no reserved title gap, toolbar visible, font/width retained',viewport.width);await context.close();
   }

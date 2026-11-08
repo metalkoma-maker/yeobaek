@@ -8,10 +8,11 @@ async function showList(){if(dirty&&!await save())return;$('workspace').classLis
 const count=s=>Array.from(s.replace(/[\r\n\u2028\u2029]/gu,'')).length;
 const countWithoutSpaces=s=>Array.from(s.replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/gu,'')).length;
 async function api(path,method='GET',data,options={}){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data),...options});const value=await r.json();if(!r.ok){const e=Error(value.error||'요청에 실패했습니다.');e.status=r.status;e.value=value;throw e;}return value;}
-let statsFrame=null, countBase={body:null,rule:null,value:0};
+let statsFrame=null,statsTimer=null,countBase={body:null,rule:null,value:0};
 function textIfChanged(id,value){const node=$(id);if(node.textContent!==value)node.textContent=value;}
 function stats(){
  if(statsFrame!==null){cancelAnimationFrame(statsFrame);statsFrame=null;}
+ if(statsTimer!==null){clearTimeout(statsTimer);statsTimer=null;}
  if(!current)return;
  const body=$('body').value,total=count(body);
  const oldRule=current.today_count_rule==='without_spaces';
@@ -25,8 +26,16 @@ function stats(){
  textIfChanged('countRule',oldRule?'전체: 공백 포함 · 오늘: 공백 제외 (내일부터 통일)':'띄어쓰기 포함 · 줄바꿈 제외 · 한국시간 기준');
 }
 // Multiple input events before a paint need only one latest-value count.
-function scheduleStats(){if(statsFrame===null)statsFrame=requestAnimationFrame(()=>{statsFrame=null;stats();});}
-let editHistory=null,historyDoc=null,bodySizeFrame=null;
+function scheduleStats(deleting=false){
+ if(deleting){
+  if(statsFrame!==null){cancelAnimationFrame(statsFrame);statsFrame=null;}
+  clearTimeout(statsTimer);statsTimer=setTimeout(()=>{statsTimer=null;stats();},180);
+ }else if(statsFrame===null){
+  clearTimeout(statsTimer);statsTimer=null;
+  statsFrame=requestAnimationFrame(()=>{statsFrame=null;stats();});
+ }
+}
+let editHistory=null,historyDoc=null,bodySizeFrame=null,bodySizeTimer=null;
 function editingState(field=document.activeElement?.id==='title'?'title':'body'){
  const node=$(field);return {title:$('title').value,body:$('body').value,field,start:node.selectionStart,end:node.selectionEnd,direction:node.selectionDirection,scroll:$('editor').scrollTop};
 }
@@ -39,11 +48,20 @@ function syncEditingHistory(id){
 }
 function resizeBody(){
  if(bodySizeFrame!==null){cancelAnimationFrame(bodySizeFrame);bodySizeFrame=null;}
+ if(bodySizeTimer!==null){clearTimeout(bodySizeTimer);bodySizeTimer=null;}
  if(!current||$('editor').hidden)return;
  const body=$('body'),pane=$('editor'),scroll=pane.scrollTop;
  body.style.height='0px';body.style.height=body.scrollHeight+'px';pane.scrollTop=scroll;
 }
-function scheduleBodySize(){if(bodySizeFrame===null)bodySizeFrame=requestAnimationFrame(()=>{bodySizeFrame=null;resizeBody();});}
+function scheduleBodySize(deleting=false){
+ if(deleting){
+  if(bodySizeFrame!==null){cancelAnimationFrame(bodySizeFrame);bodySizeFrame=null;}
+  clearTimeout(bodySizeTimer);bodySizeTimer=setTimeout(()=>{bodySizeTimer=null;resizeBody();},250);
+ }else if(bodySizeFrame===null){
+  clearTimeout(bodySizeTimer);bodySizeTimer=null;
+  bodySizeFrame=requestAnimationFrame(()=>{bodySizeFrame=null;resizeBody();});
+ }
+}
 function undoEditing(redo=false){
  if(!current||composing||!editHistory)return;
  const state=editHistory.move(redo);if(!state)return;
@@ -112,14 +130,14 @@ async function keepSessionPoint(background=false){
  if(saving||dirty||current?.id!==id)return;
  try{await api('/manuscripts/'+id+'/session-checkpoint','POST',{version:current.version},{keepalive:background});}catch{/* A later open or save can retry; local drafts remain available. */}
 }
-function edit(){editEpoch++;dirty=true;persistDraft();scheduleStats();scheduleBodySize();textIfChanged('saveStatus',recoveryReview?'불러온 내용 확인 중 · 서버 저장 전':'저장 대기');clearTimeout(timer);if(!composing&&!recoveryReview)timer=setTimeout(save,700);}
+function edit(inputType=''){editEpoch++;dirty=true;persistDraft();const deleting=inputType.startsWith('delete');scheduleStats(deleting);scheduleBodySize(deleting);textIfChanged('saveStatus',recoveryReview?'불러온 내용 확인 중 · 서버 저장 전':'저장 대기');clearTimeout(timer);if(!composing&&!recoveryReview)timer=setTimeout(save,700);}
 for(const id of ['title','body']){
  const node=$(id);
  node.addEventListener('beforeinput',e=>{
   if(editHistory&&(e.inputType==='historyUndo'||e.inputType==='historyRedo')){e.preventDefault();undoEditing(e.inputType==='historyRedo');return;}
   if(editHistory)editHistory.before(editingState(id),e.inputType);
  });
- node.addEventListener('input',e=>{if(editHistory)editHistory.input(editingState(id),e.inputType);historyButtons();edit();});
+ node.addEventListener('input',e=>{if(editHistory)editHistory.input(editingState(id),e.inputType);historyButtons();edit(e.inputType);});
  node.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer);if(editHistory)editHistory.beginComposition(editingState(id));historyButtons();});
  node.addEventListener('compositionend',()=>{composing=false;if(editHistory)editHistory.endComposition(editingState(id));historyButtons();edit();});
 }
