@@ -15,12 +15,14 @@ class AppTest(unittest.TestCase):
         self.assertEqual(a.put('/api/manuscripts/'+d['id'],json={'title':'x','body':'x','version':0}).status_code,403)
         route='/api/manuscripts/'+d['id']
         r=a.put(route,json={'title':'밤의 이야기','body':'가 나\n다😀','version':0},headers=ha)
-        self.assertEqual(r.json['total'],4);self.assertEqual(r.json['today'],4)
+        self.assertEqual(r.json['total'],5);self.assertEqual(r.json['today'],5)
+        self.assertEqual(r.json['today_count_rule'],'with_spaces')
         second=module.app.test_client(); login=second.post('/api/login',json={'email':'writer-a@example.com','password':'test-password-123'})
         self.assertEqual(second.get(route).json['body'],'가 나\n다😀')
         self.assertEqual(a.put(route,json={'title':'x','body':'old','version':0},headers=ha).status_code,409)
         r=a.put(route,json={'title':'밤','body':'가','version':1},headers=ha)
         self.assertEqual(r.json['today'],1)
+        self.assertEqual(a.get(route+'/history').json[0]['characters'],5)
         original=module.day;module.day=lambda:'2099-01-02'
         try:
             self.assertEqual(a.get(route).json['today'],0)

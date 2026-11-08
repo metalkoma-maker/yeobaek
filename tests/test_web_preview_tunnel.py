@@ -151,23 +151,23 @@ class RealTunnelPreviewTest(unittest.TestCase):
                     self.assertIn('Secure;', cookie)
                     csrf = json.loads(body)['csrf']
                     auth = {'Origin': origin, 'Cookie': cookie.split(';')[0]}
-                    status, _, body = request('/api/manuscript-order', headers=auth)
+                    status, _, body = request('/api/manuscripts', headers=auth)
                     self.assertEqual(status, 200)
-                    order = json.loads(body)
-                    self.assertEqual(len(order['ids']), 3)
-                    reversed_order = {**order, 'ids': list(reversed(order['ids']))}
-                    self.assertEqual(request('/api/manuscript-order', reversed_order, auth, 'PUT')[0], 403)
-                    self.assertEqual(request('/api/manuscript-order', reversed_order,
+                    ids = [row['id'] for row in json.loads(body)]
+                    self.assertEqual(len(ids), 3)
+                    pin = '/api/manuscripts/' + ids[-1] + '/pin'
+                    self.assertEqual(request(pin, {'pinned': True}, auth, 'PUT')[0], 403)
+                    self.assertEqual(request(pin, {'pinned': True},
                         {**auth, 'X-CSRF-Token': csrf, 'Origin': 'https://foreign.example'}, 'PUT')[0], 403)
-                    status, _, _ = request('/api/manuscript-order', reversed_order,
+                    status, _, _ = request(pin, {'pinned': True},
                         {**auth, 'X-CSRF-Token': csrf}, 'PUT')
                     self.assertEqual(status, 200)
-                    # A second login reads the same account's saved order.
+                    # A second login sees the same account's pinned manuscript first.
                     status, second_headers, _ = request('/api/login', credentials, {'Origin': origin})
                     self.assertEqual(status, 200)
-                    _, _, body = request('/api/manuscript-order', headers={
+                    _, _, body = request('/api/manuscripts', headers={
                         'Cookie': second_headers['Set-Cookie'].split(';')[0]})
-                    self.assertEqual(json.loads(body)['ids'], reversed_order['ids'])
+                    self.assertEqual([row['id'] for row in json.loads(body)], [ids[-1], *ids[:-1]])
                     self.assertEqual(sentinel.read_text(), 'This inherited database must not be opened or changed.')
                 finally:
                     launcher.stop_process(process)

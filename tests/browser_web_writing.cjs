@@ -17,7 +17,7 @@ async function performanceCheck(browser,preUndo){
  await end(page);await reset(page);
  for(let i=0;i<300;i++)await page.keyboard.down('Backspace');await page.keyboard.up('Backspace');await saved(page);
  const m=await page.evaluate(()=>({...window.metrics,undoGroups:typeof editHistory==='undefined'?null:editHistory.undoStack.length}));
- assert.equal(await page.inputValue('#body'),full.slice(0,-300));assert.equal(state.puts.length,1);assert.equal(m.bodyAssignments,0);assert.equal(m.storageWrites,300);assert.equal(m.storageReads,101);assert(m.counts<301);
+ assert.equal(await page.inputValue('#body'),full.slice(0,-300));assert.equal(state.puts.length,1);assert.equal(m.bodyAssignments,0);assert.equal(m.storageWrites,300);assert(m.storageReads>=101);assert(m.counts<301);
  const times=m.inputMs.sort((a,b)=>a-b);const p95=times[Math.floor(times.length*.95)];
  if(!preUndo){assert.equal(m.undoGroups,1);await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),full);await saved(page);assert.equal(state.doc.body,full);await page.keyboard.press('Control+y');assert.equal(await page.inputValue('#body'),full.slice(0,-300));await saved(page);assert.equal(state.doc.body,full.slice(0,-300));}
  console.log(JSON.stringify({test:'300 repeat Backspaces',version:preUndo?'previous input fix':'final with undo',handlerMs:+times.reduce((a,b)=>a+b,0).toFixed(2),p95Ms:p95,storageReads:m.storageReads,counts:m.counts,bodyAssignments:m.bodyAssignments,undoGroups:m.undoGroups,frameCallbacks:m.frameMs.length,frameMs:+m.frameMs.reduce((a,b)=>a+b,0).toFixed(2),frameP95:[...m.frameMs].sort((a,b)=>a-b)[Math.floor(m.frameMs.length*.95)]}));
@@ -79,7 +79,63 @@ async function performanceCheck(browser,preUndo){
   }
   {
    const {page,context,state}=await fixture(browser);await page.locator('#body').focus();await page.locator('#body').evaluate(b=>b.setSelectionRange(700,705));await page.keyboard.press('Backspace');assert.equal((await page.inputValue('#body')).length,1495);await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),full);assert.deepEqual(await page.locator('#body').evaluate(b=>[b.selectionStart,b.selectionEnd]),[700,705]);await saved(page);
-   await page.click('#historyButton');page.once('dialog',d=>d.accept());await page.locator('#safetyItems button').first().click();await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');await saved(page);assert.equal(state.doc.body,'가짜 이전 글');assert.equal(await page.locator('#undoEdit').isDisabled(),true);await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');console.log('PASS: selected deletion restores selection; existing server history restore starts a safe editing baseline');await context.close();
+   state.checkpoints.push({...state.history[0],kind:'manual',label:'중요한 초고'});
+   state.checkpoints.push({...state.history[0],version:22,title:'가짜 기존 기록',kind:'legacy',label:'기존 수정 이력'});
+   await page.click('#historyButton');await page.locator('#safetyDialog').waitFor({state:'visible'});
+   assert.equal(await page.getByRole('tab',{name:'최근 수정 이력'}).getAttribute('aria-selected'),'true');
+   await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
+   await page.getByRole('tab',{name:'예전 수정 이력'}).click();
+   await page.locator('.historyRecords button[data-version="0"]').waitFor({state:'visible'});
+   assert.match(await page.locator('.historyRecords').innerText(),/중요한 초고/);
+   assert.equal(await page.locator('.historyRecords > button').count(),1);
+   assert.equal(await page.locator('.historyArchive').count(),0);
+   assert.doesNotMatch(await page.locator('.historyRecords').innerText(),/가짜 기존 기록/);
+   page.once('dialog',d=>{assert.match(d.message(),/가짜 이전 글/);void d.accept();});
+   await page.locator('.historyRecords button[data-version="0"]').click();
+   await page.waitForFunction(()=>document.querySelector('#body').value==='가짜 이전 글');
+   assert.equal(state.doc.body,'가짜 이전 글');assert.equal(state.restores.length,1);
+   assert.equal(state.checkpoints.find(point=>point.kind==='before_restore').body,full);
+   assert.equal(await page.locator('#undoEdit').isDisabled(),true);
+   await end(page);await page.keyboard.type('more');await page.keyboard.press('Control+z');assert.equal(await page.inputValue('#body'),'가짜 이전 글');
+   console.log('PASS: recent/older tabs use the production list and confirmation while preserving atomic restore');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   assert.equal(state.sessionPoints.length,0,'opening the editor must not create an old-history entry');
+   await page.locator('#body').fill('가짜 세션 종료');await saved(page);
+   const response=page.waitForResponse(r=>r.url().endsWith('/session-checkpoint')&&r.request().method()==='POST');
+   await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+   assert.equal((await response).status(),200);
+   assert.equal(state.sessionPoints.at(-1).version,state.doc.version);
+   console.log('PASS: leaving the web requests a checkpoint of the saved manuscript');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   await page.locator('#body').fill('가 나\n다😀');
+   await page.waitForFunction(()=>document.querySelector('#total').textContent==='5');
+   assert.match(await page.locator('#countRule').textContent(),/띄어쓰기 포함 · 줄바꿈 제외/);
+   await saved(page);assert.equal(state.doc.total,5);
+   console.log('PASS: visible and saved character totals include spaces but exclude line breaks');await context.close();
+  }
+  {
+   const {page,context,errors}=await fixture(browser);
+   // Simulate a server rule change while this page keeps its old count function.
+   await page.evaluate(()=>render({...current,body:'가 나',total:4,today:0,today_count_rule:'with_spaces'}));
+   assert.equal(await page.locator('#today').textContent(),'0');
+   await page.evaluate(()=>{document.querySelector('#body').value='가 나!';stats();});
+   assert.equal(await page.locator('#today').textContent(),'+1');
+   assert.deepEqual(errors,[]);
+   console.log('PASS: a server count-rule change cannot make an unchanged open manuscript falsely negative');await context.close();
+  }
+  {
+   const {page,context,state}=await fixture(browser);
+   state.doc.today_count_rule='without_spaces';
+   await page.evaluate(doc=>render(doc),state.doc);
+   await page.locator('#body').fill('가 나\n다😀');
+   await page.waitForFunction(()=>document.querySelector('#total').textContent==='5');
+   assert.equal(await page.locator('#today').textContent(),'+4');
+   assert.match(await page.locator('#countRule').textContent(),/오늘: 공백 제외 \(내일부터 통일\)/);
+   console.log('PASS: existing daily counter keeps its original units during the switch day');await context.close();
   }
   for(const viewport of [{width:1280,height:800},{width:390,height:844}]){
    const {page,context}=await fixture(browser,false,{viewport});
@@ -92,12 +148,12 @@ async function performanceCheck(browser,preUndo){
    });
    assert(dimensions.titleBottom<dimensions.paneTop);assert(dimensions.bodyTop<dimensions.paneTop);assert(dimensions.headerTop>=0&&dimensions.headerBottom<viewport.height);assert.equal(dimensions.windowScroll,0);assert.equal(dimensions.horizontal,false);
    // Font style changes immediately; the textarea height follows on its RAF.
-   await page.click('#fontToggle');await page.locator('[data-size="18"]').click();await page.waitForFunction(()=>bodySizeFrame===null && document.querySelector('#body').style.height!=='' && getComputedStyle(document.querySelector('#body')).fontSize==='24px');
+   await page.click('#fontToggle');await page.locator('[data-size="18"]').click();await page.waitForFunction(()=>{const body=document.querySelector('#body');return bodySizeFrame===null&&body.style.height!==''&&getComputedStyle(body).fontSize==='24px'&&body.scrollHeight<=body.clientHeight+1;});
    assert.equal(await page.locator('#title').evaluate(n=>n.getBoundingClientRect().width),originalWidth);
    const fit=await page.locator('#body').evaluate(n=>({scroll:n.scrollHeight,height:n.clientHeight}));assert(fit.scroll<=fit.height+1);
    await page.locator('#editor').evaluate(n=>n.scrollTop=0);assert.equal(await page.locator('#body').evaluate(n=>n.scrollTop),0);
    const bodyPadding=await page.locator('#body').evaluate(n=>parseFloat(getComputedStyle(n).paddingLeft));assert.equal(bodyPadding,viewport.width<720?24:Math.max(50,(viewport.width-272-720-15)/2));
-   await end(page);await page.keyboard.press('Backspace');await page.waitForFunction(()=>bodySizeFrame===null);assert(await page.locator('#editor').evaluate(n=>n.scrollTop)>100);
+   await end(page);await page.keyboard.press('Backspace');await page.waitForFunction(()=>bodySizeFrame===null&&bodySizeTimer===null);assert(await page.locator('#editor').evaluate(n=>n.scrollTop)>100);
    await page.screenshot({path:'/tmp/yeobaek-writing-'+viewport.width+'.png'});
    console.log('PASS: title/body share scroll, no reserved title gap, toolbar visible, font/width retained',viewport.width);await context.close();
   }

@@ -28,7 +28,7 @@ FILES = ('app.py', 'static/edit-history.js', 'static/font-size.js', 'static/safe
          'static/app.js', 'static/style.css', 'static/index.html')  # HTML last
 MAX_ARCHIVE = 8 * 1024 * 1024
 MAX_FILE = 2 * 1024 * 1024
-SCHEMA_CHANGE = 'add-manuscript-order-v1'
+SCHEMA_CHANGE = 'add-history-account-v1'
 
 
 def sha(data):
@@ -140,9 +140,19 @@ def schema_ready(database):
     else:
         uri = database.as_uri() + '?mode=ro&immutable=1'
     with closing(sqlite3.connect(uri, uri=True, timeout=5)) as conn:
-        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='manuscript_order'").fetchone()
-        if not row or 'user_id TEXT PRIMARY KEY' not in row[0] or 'version INTEGER NOT NULL' not in row[0]:
-            raise ValueError('Expected additive manuscript_order table is missing')
+        required = {
+            'manuscript_order': {'user_id', 'ids', 'version'},
+            'manuscript_checkpoints': {'manuscript_id', 'version', 'title', 'body', 'updated', 'created', 'kind', 'label'},
+            'schema_migrations': {'name', 'applied'},
+            'password_resets': {'token_hash', 'user_id', 'expires'},
+        }
+        for table, columns in required.items():
+            existing = {row[1] for row in conn.execute(f'PRAGMA table_info({table})')}
+            if not columns <= existing:
+                raise ValueError('Expected additive table is missing or incomplete: ' + table)
+        markers = {row[0] for row in conn.execute('SELECT name FROM schema_migrations')}
+        if not {'history_checkpoints_v1', 'count_spaces_v1'} <= markers:
+            raise ValueError('Expected history and character-count migrations are missing')
 
 
 def api_ready(config):
@@ -152,8 +162,8 @@ def api_ready(config):
                                '--resolve', host + ':443:127.0.0.1',
                                'https://' + host + '/__deployment_health__'],
                               check=True, timeout=15, stdout=subprocess.PIPE).stdout
-    if json.loads(response) != {'api': 'manuscript-order-v1'}:
-        raise ValueError('New manuscript order API is not served by the restarted application')
+    if json.loads(response) != {'api': 'history-account-v1'}:
+        raise ValueError('New history and account API is not served by the restarted application')
 
 
 def snapshot_database(database, target):
@@ -220,7 +230,7 @@ class Gateway:
         return {'files': current, 'fingerprint': fingerprint(current),
                 'pending_recovery': pending.exists(),
                 'last_backup': json.loads(latest.read_text())['backup'] if latest.exists() else None,
-                'capability': 'code-and-additive-manuscript-order-v1'}
+                'capability': 'code-and-additive-history-account-v1'}
 
     def require_expected(self, expected):
         current = self.current()
@@ -316,7 +326,7 @@ class Gateway:
             raise RuntimeError('Deployment failed; original files restored and health verified: ' + str(error)) from error
         return {'status': 'deployed', 'backup': record['backup'], 'commit': meta['commit'],
                 'fingerprint': fingerprint(record['after']), 'database_snapshot_sha256': record['database_snapshot_sha256'],
-                'database_change': 'additive table; automatic rollback restores code only'}
+                'database_change': 'additive tables and migration markers; automatic rollback restores code only'}
 
     def rollback(self, expected):
         self.require_expected(expected)

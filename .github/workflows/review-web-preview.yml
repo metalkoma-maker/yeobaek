@@ -1,0 +1,98 @@
+name: 오늘의 웹 기능 미리보기
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/review-web-preview.yml'
+      - 'app.py'
+      - 'static/**'
+      - 'tools/run_web_preview.py'
+      - 'tools/start_web_preview_tunnel.py'
+      - 'requirements.txt'
+      - 'tests/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yeobaek-web-review
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/history-checkpoints-20261019'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: 가짜 데이터 검증
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/preview-venv"
+          "$RUNNER_TEMP/preview-venv/bin/pip" install --disable-pip-version-check -r requirements.txt
+          "$RUNNER_TEMP/preview-venv/bin/python" -m unittest discover -s tests
+      - name: 외부 미리보기 실행
+        id: preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/preview-tunnel.log"
+          nohup env CODESPACES=true CODESPACE_NAME=review-only "$RUNNER_TEMP/preview-venv/bin/python" -u tools/start_web_preview_tunnel.py > "$log" 2>&1 &
+          preview_pid=$!
+          printf '%s\n' "$preview_pid" > "$RUNNER_TEMP/preview.pid"
+          ready=0
+          for attempt in {1..90}; do
+            if grep -q '^미리보기 응답·로그인 확인 완료' "$log"; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$preview_pid" 2>/dev/null; then
+              cat "$log"
+              exit 1
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != 1 ]]; then
+            cat "$log"
+            exit 1
+          fi
+          url=$(grep -m1 -E '^https://[a-z0-9-]+\.trycloudflare\.com/$' "$log")
+          test -n "$url"
+          subdomain=${url#https://}
+          subdomain=${subdomain%.trycloudflare.com/}
+          [[ "$subdomain" =~ ^[a-z0-9-]+$ ]]
+          printf 'subdomain=%s\n' "$subdomain" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$url" > "$RUNNER_TEMP/preview-url.txt"
+          printf '미리보기 URL: %s\n' "$url"
+          {
+            printf '## 웹 기능 미리보기\n\n'
+            printf '외부 화면, 가짜 계정 로그인, 원고 목록까지 확인했습니다.\n\n'
+            printf '**주소:** %s\n\n' "$url"
+            printf '**가짜 계정:** `mobile-test@example.com` / `test-password-123`\n\n'
+            printf '임시 서버는 이 작업이 실행되는 동안만 열립니다. 운영 데이터는 사용하지 않습니다.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 검증된 임시 주소 저장
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: synthetic-web-preview-${{ steps.preview.outputs.subdomain }}
+          path: ${{ runner.temp }}/preview-url.txt
+          retention-days: 1
+          if-no-files-found: error
+      - name: 검토 중 미리보기 유지
+        shell: bash
+        run: |
+          set -euo pipefail
+          preview_pid=$(cat "$RUNNER_TEMP/preview.pid")
+          cleanup() {
+            kill "$preview_pid" 2>/dev/null || true
+            wait "$preview_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          deadline=$((SECONDS + 7200))
+          while (( SECONDS < deadline )); do
+            kill -0 "$preview_pid" 2>/dev/null || { cat "$RUNNER_TEMP/preview-tunnel.log"; exit 1; }
+            sleep 10
+          done
