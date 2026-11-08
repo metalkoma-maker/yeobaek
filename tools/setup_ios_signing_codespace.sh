@@ -8,7 +8,7 @@ fi
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../mobile"
 echo '소설여백 Expo 계정으로 로그인합니다. 인증 정보는 채팅에 보내지 마세요.'
-npx --yes eas-cli@25.1.1 login --device
+npx --yes eas-cli@27.5.0 login --device
 echo 'iOS production 서명 정보를 설정합니다. Apple 로그인은 Individual 계정의 Account Holder가 직접 진행해야 합니다.'
-npx --yes eas-cli@25.1.1 credentials --platform ios
+npx --yes eas-cli@27.5.0 credentials --platform ios
 echo '서명 정보 설정이 끝났습니다. 결과만 코덱스 채팅에 알려주세요.'
