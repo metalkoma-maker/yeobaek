@@ -1,8 +1,8 @@
 # 소설여백 아이폰 앱 — PR3 검토
 
-Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 수정일, 새 원고/작성, 0.7초 자동저장, 전체 글자 수/오늘 증감을 구현했습니다. 웹과 같은 Flask 계정·원고 API, 세션 쿠키, CSRF, version/409 충돌 검사를 사용합니다. 기본 실행은 새 임시 DB와 가짜 계정만 사용합니다. 운영 계정·DB·원고를 복사하지 않습니다. 운영 모드 코드는 준비했지만 아직 실기기에서 검증하거나 배포하지 않았습니다. 현재 아이폰 검토는 Expo Go 안에서 앱을 실행하는 방식입니다. 홈 화면에서 독립 아이콘으로 여는 설치용 iOS 앱은 아직 빌드하지 않았습니다.
+Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 수정일, 새 원고/작성, 0.7초 자동저장, 전체 글자 수/오늘 증감을 구현했습니다. 웹과 같은 Flask 계정·원고 API, 세션 쿠키, CSRF, version/409 충돌 검사를 사용합니다. 기본 실행은 새 임시 DB와 가짜 계정만 사용합니다. 운영 계정·DB·원고를 복사하지 않습니다. 운영 모드 코드는 준비했지만 운영 계정으로 실기기에서 검증하지 않았습니다. 2026-11-08에 독립 설치용 iOS 빌드를 만들었고, TestFlight 업로드를 준비하고 있습니다.
 
-장기 목표는 홈 화면의 독립 앱 아이콘과 App Store 배포입니다. 앱 이름·아이콘·iOS 식별자와 EAS 빌드 프로필을 준비했습니다. 현재 설정의 식별자 `com.metalkomamaker.soseolyeobaek`는 Apple 등록 전에 확인할 값입니다. Apple 계정 없이 가능한 시뮬레이터 독립 빌드를 먼저 검증하고, 실제 아이폰 설치용 빌드는 Apple Developer 서명 설정 후 진행합니다. TestFlight 및 App Store 배포에는 Apple Developer Program 가입, 앱 정보·개인정보 고지 준비, 심사 제출이 이어집니다. 빌드만으로 App Store에 게시되지는 않습니다.
+장기 목표는 홈 화면의 독립 앱 아이콘과 App Store 배포입니다. App Store Connect에 `com.metalkomamaker.soseolyeobaek` 앱 기록(Apple ID `6832972862`)을 만들었습니다. TestFlight 내부 테스트와 공개 App Store 심사 제출은 별도 단계입니다. 빌드만으로 App Store에 게시되지는 않습니다.
 
 `mobile/eas.json`의 `simulator`와 `production` 프로필 모두 고정 운영 HTTPS 주소를 쓰도록 설정했습니다. 시뮬레이터 빌드는 iPhone 실기기에 설치할 수 없습니다. 실제 계정 로그인·원고 저장은 아직 검증하지 않았으므로 독립 앱을 운영 계정에 연결하는 테스트는 별도 검토가 필요합니다. `mobile-build/ios-simulator-*` 브랜치에 푸시하면 GitHub Actions가 Expo 토큰으로 EAS 프로젝트를 확인하고 시뮬레이터 빌드를 검증합니다. 이 워크플로는 TestFlight 제출이나 App Store 게시를 하지 않습니다.
 
@@ -188,3 +188,9 @@ Codespaces는 외부 HTTPS를 내부 HTTP로 전달하며, 브라우저의 Origi
 시작 시 `Test API ready: codespaces-origin-v2 (new runner confirmed)`가 출력되어야 합니다. 새 실행기 고유 ID와 응답 버전을 확인한 뒤 Metro를 시작합니다. 8000 포트에 이전 실행기가 남아 있으면 명확히 중단하며 다른 프로세스를 강제로 종료하지 않습니다. 주소가 계속 거절되면 테스트 터미널에 `TEST_ORIGIN_REJECTED`와 받은 Origin/예상 Origin/Fetch Metadata만 출력됩니다. 비밀번호, 쿠키, 원고, Referer 경로는 기록하지 않습니다.
 
 이전 실행기가 동작 중이면 서버를 중지하고 git pull --ff-only 후 시작 명령을 다시 실행합니다. 테스트 DB가 새로 만들어지므로 웹과 앱 모두 가짜 계정으로 다시 로그인합니다. 앱이 이전 세션을 표시하면 Expo Go의 Reload 또는 앱을 다시 열어 로그인 상태를 새로 시작합니다.
+
+## TestFlight 내부 테스트 제출
+
+App Store Connect의 소설여백 앱 ID는 `6832972862`입니다. 2026-11-08에 완료한 서명 빌드 ID는 `99a239e7-f4be-4441-a5a7-dd86f6b4ceea`입니다. 이 빌드를 제출하면 TestFlight 처리 대기 상태가 되며 공개 App Store 심사나 출시는 시작되지 않습니다.
+
+Apple Account Holder가 내려받은 `AuthKey_*.p8` 파일을 Codespace의 `tools/` 폴더에 다시 업로드하고, Codespace 터미널에서 `cd /workspaces/yeobaek && bash tools/submit_ios_testflight_codespace.sh`를 실행합니다. Apple API Key ID와 Issuer ID는 터미널에만 입력합니다. 스크립트는 키를 임시 폴더로 옮겨 제출을 기다린 뒤 삭제합니다. 키 파일, 키 내용, 비밀번호를 채팅이나 Git에 올리지 않습니다. 성공 후 App Store Connect의 TestFlight 탭에서 처리 완료와 내부 테스터 이용 가능 상태를 확인합니다.
