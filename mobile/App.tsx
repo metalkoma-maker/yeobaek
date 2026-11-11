@@ -149,7 +149,7 @@ export default function App() {
   </View>;
   const writingPane = <View style={styles.writing}>
     <View style={styles.toolbar}>{!tablet && <Button label="← 원고 목록" disabled={busy || !!editor?.busy} onPress={() => void action(list)} />}<Text numberOfLines={1} style={styles.saveStatus}>{editor ? editor.message : '원고를 선택해 주세요'}</Text>{!!editor && <Button label="지금 저장" disabled={busy || editor.busy || !editor.dirty} onPress={() => { void editor.save(true); }} />}</View>
-    {!editor ? <View style={styles.empty}><Text style={styles.listMeta}>첫 문장을 위한 여백</Text><Text style={styles.emptyTitle}>어떤 이야기를<br />시작할까요?</Text><Button label="새 원고 쓰기" disabled={busy} onPress={() => void action(createDoc)} /></View> : <>
+    {!editor ? <View style={styles.empty}><Text style={styles.listMeta}>첫 문장을 위한 여백</Text><Text style={styles.emptyTitle}>{'어떤 이야기를\n시작할까요?'}</Text><Button label="새 원고 쓰기" disabled={busy} onPress={() => void action(createDoc)} /></View> : <>
       {!!editor.error && <Text accessibilityRole="alert" style={styles.error}>{editor.error} 입력한 글은 유지됩니다.</Text>}
       {editor.authRequired && <View style={styles.relogin}><Text style={styles.muted}>{user?.email} 계정으로 다시 로그인하세요. 현재 입력은 유지됩니다.</Text><TextInput accessibilityLabel="재로그인 비밀번호" secureTextEntry style={styles.input} value={password} onChangeText={setPassword} /><Button label="다시 로그인" disabled={busy} onPress={() => void action(async () => { await api.current!.login(user!.email, password); setPassword(''); editor.authRequired = false; editor.error = ''; editor.review = true; editor.message = '재로그인됨 · 확인 후 지금 저장'; notify(); })} /></View>}
       {editor.conflict && <Button label="서버 A / 내 글 B 비교" disabled={busy} onPress={() => void action(compare)} />}
