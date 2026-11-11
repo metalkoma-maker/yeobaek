@@ -191,6 +191,8 @@ Codespaces는 외부 HTTPS를 내부 HTTP로 전달하며, 브라우저의 Origi
 
 ## TestFlight 내부 테스트 제출
 
+2026-11-11에는 다음 빌드를 위한 iPad 전체 화면 지원, 웹과 가까운 원고 목록·집필 배치, 새 아이콘 시안을 코드에 준비했습니다. 현재 TestFlight의 `0.1.0 (3)`에는 아직 반영되지 않았습니다. 화면 검토와 새 iOS 빌드가 필요합니다.
+
 App Store Connect의 소설여백 앱 ID는 `6832972862`입니다. 2026-11-08에 완료한 서명 빌드 ID는 `99a239e7-f4be-4441-a5a7-dd86f6b4ceea`입니다. 이 빌드를 제출하면 TestFlight 처리 대기 상태가 되며 공개 App Store 심사나 출시는 시작되지 않습니다.
 
 Apple Account Holder가 내려받은 `AuthKey_*.p8` 파일을 Codespace의 `tools/` 폴더에 다시 업로드하고, Codespace 터미널에서 `cd /workspaces/yeobaek && bash tools/submit_ios_testflight_codespace.sh`를 실행합니다. Apple API Key ID와 Issuer ID는 터미널에만 입력합니다. 스크립트는 키를 임시 폴더로 옮겨 제출을 기다린 뒤 삭제합니다. 키 파일, 키 내용, 비밀번호를 채팅이나 Git에 올리지 않습니다. 성공 후 App Store Connect의 TestFlight 탭에서 처리 완료와 내부 테스터 이용 가능 상태를 확인합니다.

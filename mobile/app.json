@@ -4,11 +4,11 @@
     "slug": "soseol-yeobaek",
     "owner": "bigssong",
     "version": "0.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.metalkomamaker.soseolyeobaek",
       "buildNumber": "1",
       "infoPlist": {
