@@ -17,6 +17,7 @@ export default function App() {
   const production = endpoint.mode === 'production';
   const [address, setAddress] = useState(endpoint.origin);
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
+  const passwordInput = useRef<TextInput>(null);
   const [user, setUser] = useState<User | null>(null); const api = useRef<Api | null>(null);
   const [docs, setDocs] = useState<Manuscript[]>([]); const [editor, setEditor] = useState<Editor | null>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -160,15 +161,15 @@ export default function App() {
     </>}
   </View>;
   return <SafeAreaProvider><SafeAreaView style={styles.safe}><StatusBar style="dark" /><KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+    {!!error && !!user && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {!user ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.login}>
       <Text style={styles.brand}>소설여백</Text><Text style={styles.brandCaption}>소설 쓰는 공간</Text>
       <Text style={styles.loginTitle}>{'다음 문장을\n이어 쓸 시간.'}</Text>
-      <Text style={styles.sectionLabel}>{production ? '소설여백 웹과 같은 계정으로 로그인하세요.' : '테스트 웹과 같은 가짜 계정으로 로그인하세요.'}</Text>
-      {production ? <Text style={styles.listMeta}>운영 서버: {endpoint.origin}</Text> : <><Text style={styles.sectionLabel}>테스트 서버 주소</Text><TextInput style={styles.input} accessibilityLabel="테스트 서버 주소" value={address} onChangeText={setAddress} /></>}
-      <Text style={styles.sectionLabel}>이메일</Text><TextInput style={styles.input} accessibilityLabel="이메일" autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={setEmail} />
-      <Text style={styles.sectionLabel}>비밀번호</Text><TextInput style={styles.input} accessibilityLabel="비밀번호" secureTextEntry value={password} onChangeText={setPassword} />
-      <Button label={busy ? '로그인 중…' : '로그인'} disabled={busy} onPress={() => void action(login)} />
+      {!production && <><Text style={styles.sectionLabel}>테스트 서버 주소</Text><TextInput style={styles.input} accessibilityLabel="테스트 서버 주소" value={address} onChangeText={setAddress} /></>}
+      <Text style={styles.sectionLabel}>이메일</Text><TextInput style={styles.input} accessibilityLabel="이메일" autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" returnKeyType="next" submitBehavior="submit" onSubmitEditing={() => passwordInput.current?.focus()} value={email} onChangeText={setEmail} />
+      <Text style={styles.sectionLabel}>비밀번호</Text><TextInput ref={passwordInput} style={styles.input} accessibilityLabel="비밀번호" secureTextEntry value={password} onChangeText={setPassword} returnKeyType="go" submitBehavior="submit" onSubmitEditing={() => { if (!busy) void action(login); }} />
+      <Pressable accessibilityRole="button" disabled={busy} onPress={() => void action(login)} style={[styles.loginButton, busy && styles.loginButtonDisabled]}><Text style={styles.loginButtonText}>{busy ? '로그인 중…' : '로그인'}</Text></Pressable>
+      {!!error && <Text accessibilityRole="alert" style={styles.loginError}>{error}</Text>}
       {!production && <Text style={styles.listMeta}>테스트 계정: mobile-test@example.com / test-password-123. 실제 계정이나 원고를 입력하지 마세요.</Text>}
     </ScrollView> : <View style={[styles.workspace, tablet && styles.workspaceTablet]}>{(tablet || !editor) && manuscriptList}{(tablet || !!editor) && writingPane}</View>}
     <Modal visible={!!comparison} animationType="slide" onRequestClose={() => setComparison(null)}><SafeAreaView style={styles.safe}>
@@ -195,6 +196,7 @@ const styles = StyleSheet.create({
   secondary: { borderTopWidth: 1, borderColor: '#edf0f5', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, paddingHorizontal: 12 }, fontRow: { flexDirection: 'row', gap: 4 }, size: { padding: 8, borderRadius: 6 }, sizeSelected: { backgroundColor: '#e8eef5' }, sizeText: { color: '#172b44', fontSize: 12 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 }, emptyTitle: { textAlign: 'center', color: '#172b44', fontSize: 32, lineHeight: 48, marginVertical: 25 },
   login: { width: '100%', maxWidth: 440, alignSelf: 'center', gap: 12, padding: 32, paddingTop: 48 }, loginTitle: { color: '#172b44', fontSize: 38, lineHeight: 52, marginTop: 38, marginBottom: 15 },
+  loginButton: { minHeight: 50, backgroundColor: '#172b44', borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginTop: 12 }, loginButtonDisabled: { opacity: .5 }, loginButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' }, loginError: { color: '#9c3131', fontSize: 14, lineHeight: 20 },
   input: { borderWidth: 1, borderColor: '#cfd8e3', borderRadius: 8, padding: 12, backgroundColor: '#fff', color: '#172b44', fontSize: 16 }, relogin: { padding: 16 },
   button: { borderWidth: 1, borderColor: '#dce3eb', backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, marginVertical: 4 }, buttonText: { color: '#172b44', fontSize: 13 },
   heading: { fontSize: 22, marginVertical: 18, color: '#172b44' }, muted: { color: '#718096', fontSize: 13, marginVertical: 5 },
