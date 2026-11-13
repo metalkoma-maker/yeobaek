@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Api, buildEndpoint, Manuscript, serverAddress, User } from './src/api';
 import { Draft, Editor } from './src/editor';
 import { draftStore } from './src/drafts';
+import { WebTrial } from './src/WebTrial';
 const modified = (seconds: number) => new Date(seconds * 1000).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 function Button({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
   return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button, disabled && { opacity: .4 }]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
@@ -25,6 +26,7 @@ export default function App() {
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const [comparison, setComparison] = useState<{ a: Manuscript; b: Draft } | null>(null);
   const [font, setFont] = useState(12); const [active, setActive] = useState(true);
+  const [webTrial, setWebTrial] = useState(false);
   const lock = useRef(false);
   async function checkpointCurrent(candidate = editorRef.current) {
     const client = api.current;
@@ -54,7 +56,7 @@ export default function App() {
   });
   async function refreshList() { if (api.current) setDocs(await api.current.request<Manuscript[]>('/manuscripts')); }
   useEffect(() => {
-    if (!user || !active) return;
+    if (!user || !active || webTrial) return;
     let refreshing = false;
     const timer = setInterval(async () => {
       if (refreshing || lock.current || comparison) return;
@@ -67,7 +69,7 @@ export default function App() {
       finally { refreshing = false; }
     }, 10000);
     return () => clearInterval(timer);
-  }, [user, active, comparison]);
+  }, [user, active, comparison, webTrial]);
   async function action(task: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
@@ -141,12 +143,29 @@ export default function App() {
     await api.current!.request('/logout', 'POST', {});
     attach(null); api.current = null; setUser(null); setDocs([]);
   }
+  async function startWebTrial() {
+    const current = editorRef.current;
+    if (current?.busy || current?.conflict || current?.review) {
+      Alert.alert('원고 저장 상태 확인', '현재 원고의 저장·충돌 상태를 먼저 확인해 주세요.');
+      return;
+    }
+    if (current?.dirty && !await current.save()) return;
+    await checkpointCurrent(current);
+    const keys = await AsyncStorage.getAllKeys();
+    const count = keys.filter(key => key.startsWith('yeobaek.mobile.draft.v1:')).length;
+    Alert.alert('웹 화면 시험', count
+      ? `기존 앱에 원고 보관본 ${count}개가 남아 있습니다. 웹 화면으로 자동 이동하지 않으며 기존 앱에서 다시 확인할 수 있습니다. 웹 화면에서는 별도로 로그인해야 합니다.`
+      : '웹 화면에서는 별도로 로그인해야 합니다. 기존 앱과 기기 임시 글은 그대로 남습니다.', [
+      { text: '취소', style: 'cancel' },
+      { text: '시험하기', onPress: () => setWebTrial(true) },
+    ]);
+  }
   const stats = editor?.stats();
   const manuscriptList = <View style={[styles.sidebar, tablet && styles.sidebarTablet]}>
     <View style={styles.sidebarHead}><Text style={styles.brand}>소설여백</Text></View>
     <View style={styles.listHeading}><Text style={styles.sectionLabel}>나의 원고</Text><Button label="＋ 새 원고" disabled={busy || !!editor?.busy} onPress={() => void action(createDoc)} /></View>
     <FlatList data={docs} keyExtractor={d => d.id} ListEmptyComponent={<Text style={styles.muted}>새 원고로 이야기를 시작해 보세요.</Text>} renderItem={({ item }) => <Pressable disabled={busy} accessibilityRole="button" onPress={() => void action(() => open(item.id))} style={[styles.listItem, editor?.base.id === item.id && styles.listItemActive]}><Text numberOfLines={1} style={styles.listTitle}>{item.title || '제목 없는 원고'}</Text><Text style={styles.listMeta}>{item.total.toLocaleString()}자 · 최근 수정 {modified(item.updated)}</Text></Pressable>} />
-    <View style={styles.account}><Text numberOfLines={1} style={styles.listMeta}>{user?.email}</Text><Pressable onPress={() => void action(logout)} accessibilityRole="button"><Text style={styles.accountAction}>로그아웃</Text></Pressable></View>
+    <View style={styles.account}><Text numberOfLines={1} style={styles.listMeta}>{user?.email}</Text><Pressable onPress={() => void action(startWebTrial)} accessibilityRole="button"><Text style={styles.accountAction}>웹 화면 시험하기</Text></Pressable><Pressable onPress={() => void action(logout)} accessibilityRole="button"><Text style={styles.accountAction}>로그아웃</Text></Pressable></View>
   </View>;
   const writingPane = <View style={styles.writing}>
     <View style={styles.toolbar}>{!tablet && <Button label="← 원고 목록" disabled={busy || !!editor?.busy} onPress={() => void action(list)} />}<Text numberOfLines={1} style={styles.saveStatus}>{editor ? editor.message : '원고를 선택해 주세요'}</Text>{!!editor && <Button label="지금 저장" disabled={busy || editor.busy || !editor.dirty} onPress={() => { void editor.save(true); }} />}</View>
@@ -160,6 +179,7 @@ export default function App() {
       <View style={styles.secondary}><View style={styles.fontRow}>{[10,12,14,16,18].map(size => <Pressable key={size} accessibilityRole="button" accessibilityLabel={`본문 ${size}포인트`} accessibilityState={{ selected: font === size }} onPress={() => setFont(size)} style={[styles.size, font === size && styles.sizeSelected]}><Text style={styles.sizeText}>{size}</Text></Pressable>)}</View><Button label="공유 / 글 보관" onPress={() => { void Share.share({ message: editor.title + '\n\n' + editor.body }).catch(() => setError('공유하지 못했습니다.')); }} /><Button label="기기 보관본" disabled={busy || editor.busy} onPress={() => void action(recovery)} /></View>
     </>}
   </View>;
+  if (webTrial) return <SafeAreaProvider><WebTrial onBack={() => { setWebTrial(false); attach(null); void refreshList(); }} /></SafeAreaProvider>;
   return <SafeAreaProvider><SafeAreaView style={styles.safe}><StatusBar style="dark" /><KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     {!!error && !!user && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {!user ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.login}>
@@ -169,6 +189,7 @@ export default function App() {
       <Text style={styles.sectionLabel}>이메일</Text><TextInput style={styles.input} accessibilityLabel="이메일" autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" returnKeyType="next" submitBehavior="submit" onSubmitEditing={() => passwordInput.current?.focus()} value={email} onChangeText={setEmail} />
       <Text style={styles.sectionLabel}>비밀번호</Text><TextInput ref={passwordInput} style={styles.input} accessibilityLabel="비밀번호" secureTextEntry value={password} onChangeText={setPassword} returnKeyType="go" submitBehavior="submit" onSubmitEditing={() => { if (!busy) void action(login); }} />
       <Pressable accessibilityRole="button" disabled={busy} onPress={() => void action(login)} style={[styles.loginButton, busy && styles.loginButtonDisabled]}><Text style={styles.loginButtonText}>{busy ? '로그인 중…' : '로그인'}</Text></Pressable>
+      {production && <Pressable accessibilityRole="button" onPress={() => void action(startWebTrial)} style={styles.webTrialButton}><Text style={styles.webTrialText}>웹 화면 시험하기</Text></Pressable>}
       {!!error && <Text accessibilityRole="alert" style={styles.loginError}>{error}</Text>}
       {!production && <Text style={styles.listMeta}>테스트 계정: mobile-test@example.com / test-password-123. 실제 계정이나 원고를 입력하지 마세요.</Text>}
     </ScrollView> : <View style={[styles.workspace, tablet && styles.workspaceTablet]}>{(tablet || !editor) && manuscriptList}{(tablet || !!editor) && writingPane}</View>}
@@ -197,6 +218,7 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 }, emptyTitle: { textAlign: 'center', color: '#172b44', fontSize: 32, lineHeight: 48, marginVertical: 25 },
   login: { width: '100%', maxWidth: 440, alignSelf: 'center', gap: 12, padding: 32, paddingTop: 48 }, loginTitle: { color: '#172b44', fontSize: 38, lineHeight: 52, marginTop: 38, marginBottom: 15 },
   loginButton: { minHeight: 50, backgroundColor: '#172b44', borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginTop: 12 }, loginButtonDisabled: { opacity: .5 }, loginButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' }, loginError: { color: '#9c3131', fontSize: 14, lineHeight: 20 },
+  webTrialButton: { paddingVertical: 12, alignItems: 'center' }, webTrialText: { color: '#172b44', fontSize: 14 },
   input: { borderWidth: 1, borderColor: '#cfd8e3', borderRadius: 8, padding: 12, backgroundColor: '#fff', color: '#172b44', fontSize: 16 }, relogin: { padding: 16 },
   button: { borderWidth: 1, borderColor: '#dce3eb', backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, marginVertical: 4 }, buttonText: { color: '#172b44', fontSize: 13 },
   heading: { fontSize: 22, marginVertical: 18, color: '#172b44' }, muted: { color: '#718096', fontSize: 13, marginVertical: 5 },
