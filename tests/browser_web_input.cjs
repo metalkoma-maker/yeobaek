@@ -250,10 +250,18 @@ if(require.main===module)(async () => {
       assert.match(await page.locator('#noticeText').textContent(),/서버에 연결하지 못했습니다/);
       assert.doesNotMatch(await page.locator('#noticeText').textContent(),/Load failed|Failed to fetch/);
       assert.equal(state.doc.body,fakeBody);
+      await page.evaluate(()=>document.querySelector('#retry').click());
+      assert.equal(await page.locator('#retry').textContent(),'연결 확인 중…');
+      assert.equal(await page.locator('#retry').isDisabled(),true);
+      assert.match(await page.locator('#noticeText').textContent(),/서버 연결을 확인하며/);
+      await page.waitForFunction(()=>!document.querySelector('#retry').disabled);
+      assert.match(await page.locator('#noticeText').textContent(),/아직 서버에 연결되지 않았습니다/);
+      assert.equal(await page.locator('#saveStatus').textContent(),'저장되지 않음');
+      assert.equal(state.doc.body,fakeBody);
       state.networkFail=false;await page.click('#retry');
       await page.waitForFunction(()=>document.querySelector('#saveStatus').textContent==='저장됨');
       assert.equal(state.doc.body,fakeBody+'가');
-      console.log('PASS: offline save shows Korean guidance and saves after retry');
+      console.log('PASS: offline retry shows progress and a new failure message, then saves after reconnect');
       await context.close();
     }
     {
