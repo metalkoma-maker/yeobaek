@@ -1,4 +1,8 @@
 const $=id=>document.getElementById(id);
+const rememberedEmailKey='yeobaek.remembered-email.v1';
+try{const remembered=localStorage.getItem(rememberedEmailKey);if(remembered){$('email').value=remembered;$('rememberId').checked=true;}}catch{}
+function updateRememberedEmail(){try{if($('rememberId').checked)localStorage.setItem(rememberedEmailKey,$('email').value.trim().toLowerCase());else localStorage.removeItem(rememberedEmailKey);}catch{}}
+$('rememberId').addEventListener('change',()=>{if(!$('rememberId').checked)updateRememberedEmail();});
 let csrf='',docs=[],current=null,dirty=false,timer=null,saving=false,conflict=null,register=false,composing=false,passwordRecoveryAvailable=false,listEpoch=0;
 const mobileLayout=window.matchMedia('(max-width:720px)');
 const modifiedFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
@@ -189,12 +193,13 @@ $('copyConfirm').onclick=async()=>{
  finally{copyBusy=false;$('copyConfirm').disabled=false;$('copyCancel').disabled=false;}
 };
 async function enter(user){draftEmail=user.email;refreshDraftCount();csrf=user.csrf;$('adminLink').hidden=!user.is_admin;$('accountEmail').textContent=user.email;await refreshDocuments();$('auth').hidden=true;$('workspace').hidden=false;$('download').disabled=true;$('workspace').classList.add('view-list');$('closeList').hidden=true;list();if(docs.length&&!mobileLayout.matches)render(docs[0]);}
-$('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('authNotice').hidden=true;$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
+$('authForm').onsubmit=async e=>{e.preventDefault();$('authError').textContent='';$('authNotice').hidden=true;$('submitAuth').disabled=true;try{await enter(await api(register?'/register':'/login','POST',{email:$('email').value,password:$('password').value}));updateRememberedEmail();$('password').value='';}catch(err){$('authError').textContent=err.message;}finally{$('submitAuth').disabled=false;}};
 function updatePasswordRecoveryLink(){$('forgotPassword').hidden=register||!passwordRecoveryAvailable;}
 $('toggleAuth').onclick=()=>{register=!register;$('authNotice').hidden=true;$('submitAuth').textContent=register?'가입하고 시작하기':'로그인';$('toggleAuth').textContent=register?'이미 계정이 있나요? 로그인':'처음 오셨나요? 가입하기';$('password').autocomplete=register?'new-password':'current-password';updatePasswordRecoveryLink();};
 $('logout').onclick=async()=>{if(dirty&&!await save())return;await keepSessionPoint();try{await api('/logout','POST',{});location.reload();}catch(e){notice(e.message);}};
 $('newDoc').onclick=$('firstDoc').onclick=newDoc;$('download').onclick=$('backup').onclick=download;$('retry').onclick=()=>save(true);$('useServer').onclick=()=>{persistDraft();if(confirm('서버 원고를 열면 현재 화면의 수정 내용이 교체됩니다. 필요한 내용은 내려받았나요?')){const d=conflict;docs=docs.map(x=>x.id===d.id?d:x);render(d);}};
 $('openList').onclick=showList;$('closeList').onclick=showEditor;
+$('title').addEventListener('keydown',e=>{if(e.key!=='Enter'||e.isComposing)return;e.preventDefault();$('body').focus();$('body').setSelectionRange(0,0);});
 window.addEventListener('pagehide',()=>{if(dirty)persistDraft();void keepSessionPoint(true);});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void keepSessionPoint(true);});
 let refreshing=false;
@@ -376,6 +381,7 @@ $('deleteWarningConfirm').onclick=async()=>{
   await api('/account/delete','POST',{password:$('deletePassword').value,confirmation:$('deleteConfirmation').value});
   deleted=true;
   try{YeobaekDrafts.clearAccount(draftEmail);}catch{}
+  try{if(localStorage.getItem(rememberedEmailKey)===draftEmail)localStorage.removeItem(rememberedEmailKey);}catch{}
   location.assign('/');
  }catch(error){$('deleteWarningDialog').close();$('deleteAccountMessage').textContent=error.message;}
  finally{if(!deleted){deleteBusy=false;$('deleteWarningConfirm').disabled=false;$('deleteWarningCancel').disabled=false;}}
