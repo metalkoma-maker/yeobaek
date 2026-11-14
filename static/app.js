@@ -376,6 +376,15 @@ $('accountSettings').onclick=async()=>{
  $('changePasswordMessage').textContent='';$('deleteAccountMessage').textContent='';
  $('deleteAccountDetails').open=false;$('accountDialog').showModal();
 };
+const nativeLegacySection=document.createElement('section');nativeLegacySection.hidden=true;
+const nativeLegacyHeading=document.createElement('h3');nativeLegacyHeading.textContent='이전 앱 보관본';
+const nativeLegacyHelp=document.createElement('p');nativeLegacyHelp.textContent='이전 화면에만 남아 있는 기기 글을 확인할 수 있습니다.';
+const nativeLegacyOpen=document.createElement('button');nativeLegacyOpen.type='button';nativeLegacyOpen.textContent='기존 화면 열기';
+nativeLegacyOpen.onclick=()=>window.ReactNativeWebView?.postMessage(JSON.stringify({type:'yeobaek.open-legacy.v1'}));
+nativeLegacySection.append(nativeLegacyHeading,nativeLegacyHelp,nativeLegacyOpen);
+$('accountDialog').insertBefore(nativeLegacySection,$('deleteAccountDetails'));
+function showNativeLegacyOption(){nativeLegacySection.hidden=window.YeobaekNativeLegacyDrafts!==true;}
+window.addEventListener('yeobaek-native-ready',showNativeLegacyOption);showNativeLegacyOption();
 $('accountClose').onclick=()=>$('accountDialog').close();
 $('changePasswordForm').onsubmit=async e=>{
  e.preventDefault();const password=$('newPassword').value;
