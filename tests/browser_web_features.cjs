@@ -56,7 +56,14 @@ async function fixture(browser,state){
   if(/^\/api\/manuscripts\/[^/]+\/session-checkpoint$/.test(url.pathname))return json({version:req.postDataJSON().version,saved:true});
   if(url.pathname.startsWith('/api/manuscripts/')){
    const id=url.pathname.split('/')[3],doc=state.docs.find(d=>d.id===id);
+   if(!doc)return json({error:'원고를 찾을 수 없습니다.'},404);
    if(req.method()==='GET')return json(doc);
+   if(req.method()==='DELETE'){
+    const data=req.postDataJSON();
+    if(data.version!==doc.version)return json({error:'다른 기기에서 원고가 수정됐습니다.'},409);
+    state.docs=state.docs.filter(item=>item.id!==id);state.pins=state.pins.filter(item=>item!==id);
+    return json({ok:true});
+   }
    const data=req.postDataJSON();state.bodyPuts.push(data);
    if(data.version!==doc.version)return json({error:'원고 충돌',current:doc},409);
    Object.assign(doc,data,{version:doc.version+1,updated:Date.now()/1000});return json(doc);
@@ -73,6 +80,11 @@ async function fixture(browser,state){
  return {context,page,errors};
 }
 const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>nodes.map(node=>node.dataset.id));
+async function openCopy(page,id){
+ await page.locator('[data-id="'+id+'"] ~ .documentMore').click();
+ await page.locator('#documentActionsDialog').waitFor({state:'visible'});
+ await page.locator('#documentCopy').click();
+}
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  try{
@@ -92,7 +104,7 @@ const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>node
   {
    const state=seed(),{context,page,errors}=await fixture(browser,state);
    await page.locator('#body').fill('저장 후 복사할 글');
-   await page.locator('[data-id="a"] ~ .documentMore').click();
+   await openCopy(page,'a');
    await page.locator('#copyDialog').waitFor({state:'visible'});
    assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 2고');
    assert.equal(await page.locator('#copyMessage').textContent(),'');
@@ -105,13 +117,13 @@ const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>node
    assert.equal(state.docs.find(d=>d.id==='copy-3').body,'저장 후 복사할 글');
    assert.equal(state.docs.find(d=>d.id==='copy-3').today,0);
    assert.equal((await ids(page))[0],'copy-3');
-   await page.locator('[data-id="a"] ~ .documentMore').click();
+   await openCopy(page,'a');
    await page.locator('#copyDialog').waitFor({state:'visible'});
    assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 3고');
    await page.locator('#copyConfirm').click();
    await page.waitForFunction(()=>current.id==='copy-4');
    await page.waitForFunction(()=>!copyBusy&&!document.querySelector('#copyDialog').open);
-   await page.locator('[data-id="a"] ~ .documentMore').click();
+   await openCopy(page,'a');
    await page.locator('#copyDialog').waitFor({state:'visible'});
    const before=state.docs.length;state.docs.find(d=>d.id==='a').version++;
    await page.locator('#copyConfirm').click();
@@ -120,9 +132,42 @@ const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>node
    assert.deepEqual(errors,[]);console.log('PASS: saving as 2고/3고 preserves source and blocks stale copies');await context.close();
   }
   {
+   const state=seed(),{context,page,errors}=await fixture(browser,state);
+   await page.locator('[data-id="b"] ~ .documentMore').click();
+   await page.locator('#documentDelete').click();
+   await page.locator('#deleteManuscriptDialog').waitFor({state:'visible'});
+   assert.match(await page.locator('#deleteManuscriptHelp').textContent(),/되돌릴 수 없습니다/);
+   await page.locator('#deleteManuscriptCancel').click();
+   assert.deepEqual(await ids(page),['a','b','c']);
+   await page.locator('[data-id="b"] ~ .documentMore').click();
+   await page.locator('#documentDelete').click();
+   await page.locator('#deleteManuscriptDialog').waitFor({state:'visible'});
+   state.docs.find(d=>d.id==='b').version++;
+   await page.locator('#deleteManuscriptConfirm').click();
+   await page.waitForFunction(()=>document.querySelector('#deleteManuscriptMessage').textContent.includes('다른 기기'));
+   assert.deepEqual(await ids(page),['a','b','c']);
+   await page.locator('#deleteManuscriptCancel').click();
+   await page.locator('[data-id="b"] ~ .documentMore').click();
+   await page.locator('#documentDelete').click();
+   await page.locator('#deleteManuscriptDialog').waitFor({state:'visible'});
+   await page.locator('#deleteManuscriptConfirm').click();
+   await page.waitForFunction(()=>!document.querySelector('#deleteManuscriptDialog').open);
+   assert.deepEqual(await ids(page),['a','c']);
+   await page.locator('[data-id="a"] ~ .documentMore').click();
+   await page.locator('#documentDelete').click();
+   await page.locator('#deleteManuscriptDialog').waitFor({state:'visible'});
+   await page.locator('#deleteManuscriptConfirm').click();
+   await page.waitForFunction(()=>current===null);
+   assert.deepEqual(await ids(page),['c']);
+   assert.equal(await page.locator('#empty').isVisible(),true);
+   assert.deepEqual(errors,[]);
+   console.log('PASS: manuscript deletion requires confirmation and current version, then clears the open editor');
+   await context.close();
+  }
+  {
    const state=seed();state.docs.find(d=>d.id==='a').title='가짜 원고 a · 2교';
    const {context,page,errors}=await fixture(browser,state);
-   await page.locator('[data-id="a"] ~ .documentMore').click();
+   await openCopy(page,'a');
    await page.locator('#copyDialog').waitFor({state:'visible'});
    assert.equal(await page.inputValue('#copyTitle'),'가짜 원고 a · 3고');
    assert.deepEqual(errors,[]);await context.close();
@@ -132,7 +177,7 @@ const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>node
    state.docs.find(d=>d.id==='a').title=longTitle;
    const {context,page,errors}=await fixture(browser,state);
    for(const round of [2,3]){
-    await page.locator('[data-id="a"] ~ .documentMore').click();
+    await openCopy(page,'a');
     await page.locator('#copyDialog').waitFor({state:'visible'});
     assert.equal(await page.inputValue('#copyTitle'),longTitle.slice(0,195)+' · '+round+'고');
     await page.locator('#copyConfirm').click();
