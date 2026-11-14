@@ -236,8 +236,12 @@ if(require.main===module)(async () => {
       const key='yeobaek.draft.v1:'+encodeURIComponent(email)+':synthetic:previous-tab';
       await page.evaluate(({key,recovery})=>{localStorage.setItem(key,JSON.stringify(recovery));window.dispatchEvent(new StorageEvent('storage',{key}));},{key,recovery});
       await page.waitForFunction(()=>!document.querySelector('#recoveryBanner').hidden);
+      await page.setViewportSize({width:1024,height:768});
       await page.click('#draftsButton');
-      await page.getByRole('button',{name:'B 불러오기',exact:true}).click();
+      const loadButton=page.getByRole('button',{name:'B 불러오기',exact:true});
+      const buttonBox=await loadButton.boundingBox(),dialogBox=await page.locator('#safetyDialog').boundingBox();
+      assert(buttonBox&&dialogBox&&buttonBox.y>=dialogBox.y&&buttonBox.y+buttonBox.height<=dialogBox.y+dialogBox.height,'B 불러오기 버튼이 iPad 비교 창 안에 보여야 합니다');
+      await loadButton.click();
       assert.equal(await page.inputValue('#body'),recovery.body);
       assert.equal(await page.evaluate(()=>save()),false);assert.equal(state.puts.length,0);assert.equal(state.doc.body,fakeBody);
       await page.click('#retry');
