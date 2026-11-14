@@ -127,7 +127,33 @@ async function togglePin(doc,button){
 function render(d,navigate=false){recoveryReview=false;$('retry').textContent='다시 저장';$('historyButton').disabled=false;current=d;dirty=false;conflict=null;if($('title').value!==d.title)$('title').value=d.title;if($('body').value!==d.body)$('body').value=d.body;$('empty').hidden=true;$('editor').hidden=false;$('download').disabled=false;$('notice').hidden=true;$('saveStatus').textContent='저장됨';stats();list();$('closeList').hidden=false;if(navigate)showEditor();syncEditingHistory(d.id);}
 async function openDoc(id){if(saving)return;if(dirty&&!await save())return;void keepSessionPoint();try{const epoch=editEpoch;const d=await api('/manuscripts/'+id);if(dirty||saving||epoch!==editEpoch)return;render(d,true);}catch(e){notice(e.message);}}
 function notice(message,isConflict=false){$('noticeText').textContent=message;$('notice').hidden=false;$('useServer').hidden=!isConflict;$('retry').hidden=isConflict;}
-async function save(manual=false){if(recoveryReview&&!manual)return false;clearTimeout(timer);if(!dirty)return true;if(saving)return false;if(conflict)return false;saving=true;const id=current.id,title=$('title').value,body=$('body').value;$('saveStatus').textContent='저장 중…';try{const d=await api('/manuscripts/'+id,'PUT',{title,body,version:current.version});clearSavedDraft(id,title,body);recoveryReview=false;current=d;docs=recentDocs(docs.map(x=>x.id===id?d:x));dirty=$('title').value!==title||$('body').value!==body;if(dirty){persistDraft();scheduleStats();}else{stats();list();}$('notice').hidden=true;$('saveStatus').textContent=dirty?'저장 대기':'저장됨';return !dirty;}catch(e){$('saveStatus').textContent='저장되지 않음';if(e.status===409){conflict=e.value.current;notice('다른 기기에서 원고가 수정되었습니다. 현재 입력은 유지됩니다. 내 원고를 내려받은 뒤 서버 원고를 열어 내용을 비교해 주세요.',true);}else{notice(e.message+' 입력한 내용은 이 화면에 유지됩니다. '+(e.status===undefined?'인터넷 연결 후':'잠시 후')+' 다시 저장해 주세요.');}return false;}finally{saving=false;if(dirty&&!conflict&&!recoveryReview&&$('notice').hidden)timer=setTimeout(save,700);}}
+async function save(manual=false){
+ if(recoveryReview&&!manual)return false;
+ clearTimeout(timer);if(!dirty)return true;if(saving||conflict)return false;
+ saving=true;
+ const id=current.id,title=$('title').value,body=$('body').value;
+ const retryLabel=$('retry').textContent,retryStarted=Date.now();
+ $('saveStatus').textContent='저장 중…';
+ if(manual){$('retry').disabled=true;$('retry').textContent='연결 확인 중…';$('noticeText').textContent='서버 연결을 확인하며 다시 저장하고 있습니다.';}
+ try{
+  const d=await api('/manuscripts/'+id,'PUT',{title,body,version:current.version});
+  clearSavedDraft(id,title,body);recoveryReview=false;current=d;docs=recentDocs(docs.map(x=>x.id===id?d:x));
+  dirty=$('title').value!==title||$('body').value!==body;
+  if(dirty){persistDraft();scheduleStats();}else{stats();list();}
+  $('notice').hidden=true;$('saveStatus').textContent=dirty?'저장 대기':'저장됨';return !dirty;
+ }catch(e){
+  if(manual&&e.status===undefined){const remaining=500-(Date.now()-retryStarted);if(remaining>0)await new Promise(resolve=>setTimeout(resolve,remaining));}
+  $('saveStatus').textContent='저장되지 않음';
+  if(e.status===409){conflict=e.value.current;notice('다른 기기에서 원고가 수정되었습니다. 현재 입력은 유지됩니다. 내 원고를 내려받은 뒤 서버 원고를 열어 내용을 비교해 주세요.',true);}
+  else if(manual&&e.status===undefined){notice((navigator.onLine===false?'아직 인터넷에 연결되지 않았습니다.':'아직 서버에 연결되지 않았습니다. 인터넷 연결을 확인해 주세요.')+' 입력한 내용은 이 화면에 유지됩니다. 연결 후 다시 저장해 주세요.');}
+  else{notice(e.message+' 입력한 내용은 이 화면에 유지됩니다. '+(e.status===undefined?'인터넷 연결 후':'잠시 후')+' 다시 저장해 주세요.');}
+  return false;
+ }finally{
+  saving=false;
+  if(manual){$('retry').disabled=false;$('retry').textContent=recoveryReview?retryLabel:'다시 저장';}
+  if(dirty&&!conflict&&!recoveryReview&&$('notice').hidden)timer=setTimeout(save,700);
+ }
+}
 async function keepSessionPoint(background=false){
  const id=current?.id;if(!id||!csrf||conflict||recoveryReview||composing)return;
  if(dirty&&(saving||!await save()))return;
