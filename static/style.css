@@ -97,3 +97,4 @@ header .editArrow:hover:not(:disabled){background:#edf2f7}
 .historyRecords{display:grid;gap:8px}
 
 .auth .rememberId{display:flex;align-items:center;gap:9px;margin:14px 0 20px;cursor:pointer;font-size:14px;color:#64758b}.auth .rememberId input{width:16px;height:16px;margin:0;accent-color:#172b44}
+.recoveryActions{position:sticky;bottom:0;display:flex;gap:8px;padding:12px 0 2px;background:#fff;border-top:1px solid #e1e7ee}.recoveryActions button{flex:1;min-height:44px}
