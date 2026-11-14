@@ -146,6 +146,7 @@ const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>node
    assert.deepEqual(await ids(page),['a','b','c'],'old manual order must be ignored');
    assert.equal(await page.locator('[data-id="a"]').getAttribute('draggable'),null);
    await page.locator('[data-id="c"]').click();
+   await page.waitForFunction(()=>current?.id==='c'&&document.querySelector('#body').value==='가짜 본문 c');
    const saved=page.waitForResponse(response=>response.url().endsWith('/api/manuscripts/c')&&response.request().method()==='PUT');
    await page.locator('#body').fill('가짜 원고 c를 새로 수정');
    assert.equal((await saved).status(),200);
