@@ -1,0 +1,206 @@
+# 소설여백 아이폰 앱 — PR3 검토
+
+Expo·React Native 첫 버전입니다. 로그인, 내 원고 목록과 최근 수정일, 새 원고/작성, 0.7초 자동저장, 전체 글자 수/오늘 증감을 구현했습니다. 웹과 같은 Flask 계정·원고 API, 세션 쿠키, CSRF, version/409 충돌 검사를 사용합니다. 기본 실행은 새 임시 DB와 가짜 계정만 사용합니다. 운영 계정·DB·원고를 복사하지 않습니다. 운영 모드 코드는 준비했지만 운영 계정으로 실기기에서 검증하지 않았습니다. 2026-11-08에 독립 설치용 iOS 빌드를 만들었고, TestFlight 업로드를 준비하고 있습니다.
+
+장기 목표는 홈 화면의 독립 앱 아이콘과 App Store 배포입니다. App Store Connect에 `com.metalkomamaker.soseolyeobaek` 앱 기록(Apple ID `6832972862`)을 만들었습니다. TestFlight 내부 테스트와 공개 App Store 심사 제출은 별도 단계입니다. 빌드만으로 App Store에 게시되지는 않습니다.
+
+`mobile/eas.json`의 `simulator`와 `production` 프로필 모두 고정 운영 HTTPS 주소를 쓰도록 설정했습니다. 시뮬레이터 빌드는 iPhone 실기기에 설치할 수 없습니다. 실제 계정 로그인·원고 저장은 아직 검증하지 않았으므로 독립 앱을 운영 계정에 연결하는 테스트는 별도 검토가 필요합니다. `mobile-build/ios-simulator-*` 브랜치에 푸시하면 GitHub Actions가 Expo 토큰으로 EAS 프로젝트를 확인하고 시뮬레이터 빌드를 검증합니다. 이 워크플로는 TestFlight 제출이나 App Store 게시를 하지 않습니다.
+
+2026-10-17 GitHub Actions의 [독립 iOS 시뮬레이터 빌드](https://github.com/metalkoma-maker/yeobaek/actions/runs/39027123439)가 성공했습니다. 연결된 [Expo 프로젝트](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek)의 ID를 `app.json`에 저장했습니다. [빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/4ce02108-b856-41ae-8735-deacd9423774)은 독립 앱 패키징의 성공 증거이며 실제 iPhone 설치나 운영 계정 사용을 검증한 결과는 아닙니다.
+
+Apple 서명 정보가 EAS에 준비되면 코덱스가 `mobile-build/ios-device-*` 브랜치를 푸시해 설치용 빌드를 시작할 수 있습니다. 이 작업은 운영 API의 공개 식별 응답을 읽기 전용으로 확인하고 앱 검사를 거친 뒤 `production` 프로필로 IPA를 빌드합니다. 실제 운영 로그인·원고 저장은 빌드 과정에서 실행하지 않습니다. 빌드 완료 뒤 TestFlight 업로드와 아이폰 설치는 별도 단계이며 자동 제출하지 않습니다. 2026-11-08에는 운영 API 확인과 앱 검사까지 성공했으나 EAS의 iOS 서명 정보가 없어 비대화식 빌드가 중단됐습니다. Apple Developer Individual 계정에서는 Account Holder가 최초 배포 인증서와 프로비저닝 프로필을 만들어야 합니다. 모바일 Codespace에서 `bash tools/setup_ios_signing_codespace.sh`를 실행해 소설여백 Expo 계정에 로그인한 다음, 아내분이 본인 Apple 계정으로 iOS `production` 서명 설정을 완료합니다. 비밀번호와 인증 코드는 채팅이나 저장소에 보내지 않습니다. 설정 뒤 코덱스가 빌드를 재실행합니다.
+
+Apple 계정 비밀번호 로그인에서 EAS CLI가 `Received undefined`로 실패하면 같은 로그인을 반복하지 않습니다. Apple Account Holder가 App Store Connect에서 **Admin 권한의 Team API Key**를 발급하고, `.p8` 파일을 Codespace 탐색기의 `tools/` 폴더에 업로드한 뒤 `bash tools/setup_ios_signing_api_key_codespace.sh`를 실행합니다. 스크립트가 Key ID, Issuer ID, Team ID를 터미널에서 물어보고 Apple API 키로 `production` 서명 설정을 진행합니다. `AuthKey_*.p8`은 Git에서 제외되며, 유효한 키는 실행 중 임시 폴더로 옮겨 종료 시 삭제합니다. 키 파일·값은 채팅이나 저장소에 커밋하지 않습니다.
+
+## 코덱스 채팅에서 검토하기
+
+PR3의 모바일 파일을 업데이트하면 GitHub Actions의 **모바일 앱 검증**이 타입·저장 보호 테스트와 iOS 번들 두 모드를 검사합니다. **소설여백 아이폰 임시 검토 주소** 작업은 가짜 API와 Expo 서버를 약 115분 동안 실행하고 외부 로그인·원고 조회와 Expo 서버 응답을 검사합니다. 검토 주소가 만료되면 코덱스가 `mobile-preview/run-*` 브랜치를 푸시해 새 미리보기를 시작할 수 있습니다. 코덱스가 작업 로그에서 `MOBILE_PREVIEW_URL`을 확인해 채팅에 전달합니다. 아이폰에서는 코덱스가 제공한 QR을 기본 카메라로 스캔해 Expo Go로 엽니다. 테스트 웹 주소도 같은 채팅에 전달합니다. 코드스페이스나 PowerShell 명령은 필요하지 않습니다.
+
+임시 주소는 가짜 원고 전용이고 만료됩니다. 실제 계정 정보는 입력하지 마세요. Expo Go의 계정·SDK 제한 때문에 아이폰에서 앱 열기가 거절되면 그 화면을 확인해 최초 계정 연결에 필요한 최소 단계만 안내합니다. Actions가 확인한 서버 응답만으로 아이폰 화면까지 검증됐다고 간주하지 않습니다.
+
+아이폰 Expo Go와 GitHub Actions의 Expo CLI는 **같은 Expo 계정**으로 로그인해야 합니다. 최초 1회, 아이폰 Expo Go에 로그인한 계정으로 [Expo access token](https://expo.dev/settings/access-tokens)을 만들고 저장소의 [Actions secrets](https://github.com/metalkoma-maker/yeobaek/settings/secrets/actions)에 `EXPO_TOKEN`이라는 이름으로 저장합니다. 토큰은 채팅이나 저장소 파일에 붙여넣지 않습니다. 이후 코덱스가 PR을 갱신해 임시 검토 주소와 QR을 다시 만들 수 있습니다. 토큰이 없거나 인증되지 않으면 워크플로는 주소를 발행하지 않고 중단합니다.
+
+운영 연결은 별도 `EXPO_PUBLIC_YEOBAEK_MODE=production` 설정으로만 켜집니다. 이 모드는 고정 주소 `https://yeobaek-write.duckdns.org`와 서버 식별 응답을 확인한 후 로그인합니다. 서버 주소 입력란은 표시하지 않으며 가짜 API 주소와 함께 설정하면 빌드가 거부됩니다. 실제 운영 계정으로 로그인하고 원고를 저장하는 실기기 검증은 사용자가 검토한 뒤 진행합니다. 운영 웹 배포나 DB 변경은 이 PR에 포함되지 않습니다.
+
+## 무엇이 완료됐고 무엇이 필요한가
+
+| 항목 | 상태 |
+| --- | --- |
+| 기존 웹 수동 배포 | 기존 구성 유지. 모바일 실행과 별개 |
+| 모바일 기능/저장 보호 | 구현 및 가짜 데이터 검증 완료 |
+| PR 검사 및 임시 아이폰 검토 주소 | GitHub Actions에서 자동 실행. 아이폰 로그인·저장·오프라인 복구는 사용자 확인 완료 |
+| 운영 서버 연결 코드 | 고정 HTTPS 주소·서버 식별 검사 구현. 운영 로그인·저장 실기기 검증 전 |
+| 임시 테스트 서버 | GitHub Actions가 가짜 DB·Expo 서버를 115분 이내로 실행. 아이폰 연결은 실기기 확인 필요 |
+| 장시간 개인 테스트 | 별도 GitHub Codespaces 실행 중에만 가능. 종료·유휴 시간 제한 있음 |
+
+**SDK 57**을 사용합니다. 2026-10-13 사용자의 실제 iPhone Expo Go 화면이 지원 SDK를 57.0.0으로 표시했고, SDK54 프로젝트를 거부한 것을 확인해 의존성을 맞췄습니다. 앞서 읽은 공식 문서의 App Store 지원 버전 설명과 실기기가 달랐으므로 이 앱은 실기기 정보를 우선합니다. Expo Go의 지원 SDK와 프로젝트 SDK가 같아야 합니다. Expo Go로 테스트하는 현재 경로에 Mac, Xcode, 유료 Apple 개발자 계정은 필요하지 않습니다. [SDK 불일치 개념](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/)
+
+## 대체 방법: GitHub Codespaces에서 앱 + 가짜 웹 실행
+
+Codespaces는 현재 Codex 작업 공간과 다른 클라우드 컴퓨터입니다. Codex에서 수정해 GitHub PR에 올린 코드를 Codespaces에서 실행합니다. PC가 꺼져 있어도 Codespaces가 실행 중이면 아이폰에서 테스트할 수 있습니다. 웹의 수동 배포 버튼이 앱 서버를 실행해 주는 것은 아닙니다. 운영 서버에는 설치하지 않습니다.
+
+### 1. 아이폰과 무료 Expo 계정
+
+1. iPhone App Store에서 **Expo Go**를 설치합니다. 현재 프로젝트 SDK57과 앱에 표시되는 지원 SDK가 같은지 확인합니다. 불일치 오류가 나오면 그 화면의 버전을 기준으로 프로젝트를 맞춥니다.
+2. https://expo.dev/signup 에서 무료 Expo 계정을 만듭니다. 기존 계정이 있으면 그대로 사용합니다.
+3. Expo Go의 계정 메뉴에서 로그인합니다. 같은 계정으로 아래 Codespaces의 Expo CLI도 로그인해야 합니다. 비밀번호/인증 토큰을 채팅이나 저장소에 넣지 않습니다. [실제 iPhone의 동일 계정 로그인 요구](https://docs.expo.dev/troubleshooting/expo-go-sign-in-required/)
+
+### 2. 별도 Codespace 만들기 (iPhone Safari에서도 가능)
+
+1. 모바일 변경 PR을 확인해 병합합니다. 앱을 시험하기만 한다면 PR 브랜치에서 Codespace를 만들어도 됩니다. 웹 배포 workflow는 실행하지 않습니다.
+2. GitHub 여백 저장소 → **Code → Codespaces → ⋯ → New with options**로 이동합니다.
+3. 모바일 코드가 있는 Branch를 선택합니다. Dev container configuration은 **Yeobaek iPhone test (synthetic data)**, Machine type은 **2-core**를 선택합니다. Create codespace를 누릅니다.
+4. 초기 설치가 끝날 때까지 기다립니다. 이 설정은 Python 가상환경과 mobile 의존성만 준비합니다. Flask 앱을 가져오거나 DB를 만들거나 운영에 접속하지 않습니다.
+5. 설치 오류가 있거나 기본 설정으로 만들었다면 터미널에서 다음 한 줄을 실행합니다. 아래 명령은 Windows/운영 SSH가 아닌 **Codespaces 웹 터미널**에 입력합니다.
+
+```bash
+bash tools/prepare_mobile_codespace.sh
+```
+
+### 3. 같은 Expo 계정으로 로그인하고 서버 시작
+
+Codespaces 터미널에서 저장소 루트에 있는 상태로 한 줄씩 실행합니다. 비밀번호 입력값은 터미널의 로그인 질문에만 입력합니다.
+
+```bash
+cd mobile
+```
+
+```bash
+npx expo login
+```
+
+```bash
+npx expo whoami
+```
+
+Expo Go와 같은 계정인지 확인합니다.
+
+```bash
+cd ..
+```
+
+```bash
+bash tools/start_mobile_codespace.sh
+```
+
+이 명령은 별도 Codespaces에서만 동작합니다. 가짜 계정/원고를 넣은 새 임시 DB로 Flask를 실행하고 Metro를 실행합니다. 8000은 테스트 API, 8081은 Expo 서버입니다. 앱의 API 주소는 해당 Codespace에 맞춰 자동 지정합니다. 시작 때마다 가짜 DB와 원고 ID가 새로 만들어집니다.
+
+### 4. 아이폰에서 접근할 두 포트 공유
+
+Codespaces 아래 **PORTS** 탭에서 `8000`, `8081` 두 행의 **Port Visibility → Public**을 각각 선택합니다. 없으면 Add port로 추가합니다. 기본은 Private이며 실행 스크립트는 공개 설정을 자동 변경하지 않습니다.
+
+이는 해당 테스트 API와 Metro 코드가 URL을 아는 사람에게 공개되는 설정입니다. 저장소 소스와 가짜 데이터만 공유하고 실제 계정/원고/비밀 설정은 사용하지 않습니다. 테스트 종료 때 두 포트를 Private로 되돌리고 Codespace를 중지합니다. 기관 정책이 Public을 금지하면 이 방식은 사용할 수 없습니다. GitHub 토큰을 Expo 앱에 넣어 Private 포트를 우회하지 않습니다.
+
+**Port protocol은 HTTP 그대로** 둡니다. 외부의 `https://...app.github.dev` 주소는 GitHub가 TLS를 제공합니다. 내부 Flask/Metro를 TLS 서버로 바꾸지 않습니다. [공식 포트 공유 안내](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace)
+
+### 5. 같은 아이폰에서 앱 열기
+
+1. 터미널에 출력된 `https://...-8000.app.github.dev/_mobile/open` 링크를 iPhone Safari에서 엽니다.
+2. PC의 코덱스 채팅에 제공된 QR을 아이폰 기본 카메라로 스캔해 Expo Go에서 엽니다. 같은 아이폰에서 링크를 열었다면 **Expo Go에서 소설여백 열기** 버튼도 사용할 수 있지만, Safari가 `exp://` 주소를 거절할 수 있습니다.
+3. 앱은 테스트 API 주소를 자동 입력합니다. 다음 가짜 계정으로 로그인합니다.
+
+```text
+이메일: mobile-test@example.com
+비밀번호: test-password-123
+```
+
+4. 기본 가짜 원고를 열고 작성합니다. 입력을 멈춘 뒤 `저장됨`을 확인합니다.
+5. Safari에서 같은 시작 페이지의 **테스트 웹 열기**를 눌러 같은 가짜 계정으로 로그인합니다. 앱과 웹에서 같은 원고를 보는지 확인합니다.
+
+Expo 무료 계정은 앱을 여는 계정이고 위 가짜 Flask 계정은 원고에 로그인하는 계정입니다. GitHub 계정까지 총 세 역할이 있습니다. 실제 여백 운영 로그인 정보는 입력하지 않습니다. 원고 API 구조가 동일하다는 검증과 운영 DB를 직접 연결했다는 것은 다릅니다. 현재 앱은 지정된 Codespaces 테스트 API 또는 로컬 테스트 서버만 허용하고, 가짜 서버 표식도 로그인 전에 확인합니다. 운영 API 연결은 추후 별도로 검토합니다.
+
+## PC를 끈 뒤 유지되는 범위와 비용
+
+- PC가 꺼져도 별도 Codespace가 실행 중이면 앱의 코드/가짜 API를 제공합니다. Codespace가 정지되면 새 앱 로딩과 서버 저장이 중단됩니다. 이미 열어 쓴 내용은 기기에 보관하고 다시 저장할 수 있습니다.
+- 기본 idle timeout은 30분이며 사용자 설정에서 최대 240분까지 가능합니다. GitHub Settings → Codespaces의 timeout을 필요한 테스트 길이만큼 설정합니다. 중지 후에는 Codespace를 다시 시작하고 위 시작 명령을 다시 실행합니다. 재시작 뒤 가짜 DB는 새 DB이므로 이전 테스트 원고가 서버에 이어지는 것은 아닙니다. [공식 timeout 안내](https://docs.github.com/en/codespaces/setting-your-user-preferences/setting-your-timeout-period-for-github-codespaces)
+- GitHub Free 개인 계정의 월 무료분은 **120 core-hours**와 **15 GB-month**입니다. 2-core면 실행 시간 약 **60시간**에 해당합니다. 초과 시 2-core 계산 비용은 **시간당 USD 0.18**, 저장소는 **GB-month당 USD 0.07**입니다. 멈춘 Codespace도 저장공간을 사용합니다. 결제 수단/예산 설정에 따라 초과 시 중지되거나 청구될 수 있으므로 Billing에서 확인하고, 테스트 뒤 Stop합니다. [공식 비용](https://docs.github.com/en/billing/concepts/product-billing/github-codespaces)
+- Expo 계정/호환되는 Expo Go로 테스트하는 데 Apple 개발자 가입이나 iOS 빌드 비용은 필요하지 않습니다. 무료 플랜의 현재 제한은 가입 화면에서 확인합니다.
+- **24시간 항상 실행**이 필요하면 Codespaces 세션 방식으로 보장할 수 없습니다. 별도의 상시 개발/테스트 서버와 고정 HTTPS 연결이 필요하며 서버·스토리지 비용이 별도로 생깁니다. 기존 운영 서버나 기존 배포 VPN 정책을 이 목적으로 바꾸지 않았습니다.
+
+EAS Update로 앱 JavaScript를 게시하면 Metro를 항상 실행할 필요를 줄일 수 있습니다. 다만 사용자 소유 Expo 프로젝트/게시 인증이 필요하고, 로그인·자동저장을 제공하는 별도 API 서버는 여전히 필요합니다. 앱 번들만 게시해서 원고 API까지 실행되는 것은 아닙니다. iPhone의 Expo Go에서는 본인/소속 조직의 프로젝트만 로딩할 수 있다는 현재 제한도 있습니다. 이번에는 이 추가 게시 구성을 만들지 않았습니다. [EAS Update 제한](https://expo.dev/changelog/expo-go-loading-changes-may-2026), [Expo 비용](https://expo.dev/pricing)
+
+## 저장 보호와 실제 아이폰 검증
+
+- 공백 제외/유니코드 코드 포인트 기준 글자 수. 오늘 증감은 한국시간, 저장 대기 중 입력 포함. 본문 10/12/14/16/18pt, 기본 12pt.
+- 기기 임시본을 서버/계정/원고별로 순서대로 보관. 기기 저장 실패 시 서버 전송 중단. PUT 하나씩, version 필수. 저장 중 추가 입력/뒤늦은 GET이 현재 입력을 바꾸지 않음.
+- 저장 실패 시 자동 재시도 중단. 사용자가 다시 저장. 409는 A/B 비교로 처리하고 원고를 자동 덮어쓰지 않음. B 불러오기는 명시적 저장 전까지 서버에 반영되지 않음. A 유지 뒤 A를 편집/저장해도 최근 B 별도 복구본을 보존.
+- 미저장/충돌 상태에서 목록 이동·로그아웃은 차단. 인증 만료 시 입력을 유지하며 같은 계정 재로그인 후 명시적 저장.
+- 기기 임시본은 종단간 암호화되지 않음. Expo Go 삭제/데이터 삭제/강제 종료 직전 아직 완료되지 않은 기기 저장은 보장하지 못함. 서버의 기존 수정이력 50개는 테스트 웹에서 확인.
+
+실기기에서 다음을 확인합니다: 로그인/새 원고/최근 수정일, 한글 조합과 반복 삭제, 입력 후 자동저장, 비행기 모드에서 실패한 입력 유지, 인터넷 복구 후 재시도, Safari와 동시 편집 때 409, B 불러온 뒤 저장 전 서버 불변, 앱 종료 후 기기본 복구, iOS 키보드와 쿠키 유지. 실제 원고는 사용하지 않습니다. Codespace를 중지하는 대신 아이폰 인터넷만 끊어야 같은 가짜 DB로 연결 복구를 검증할 수 있습니다.
+
+## 개발 검증
+
+저장소 루트:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+Codespaces의 Origin 변환을 로컬에서 모의한 브라우저 로그인/쿠키/자동저장/재읽기 검증:
+
+```bash
+node tests/browser_mobile_proxy.cjs
+```
+
+Playwright와 Chromium이 있는 개발 환경에서 실행합니다. 새 가짜 DB와 로컬 HTTP만 사용하며, 운영 서버나 실제 Codespaces로 요청하지 않습니다. 테스트는 일반 Origin과 HTTP/HTTPS localhost 변환을 각각 검증하고, 다른 실행기 ID를 반환하는 포트는 시작 확인에서 거절하는지도 확인합니다.
+
+mobile 폴더:
+
+```bash
+npm run typecheck
+```
+
+```bash
+npm test
+```
+
+```bash
+npm run export:ios
+```
+
+`export:ios`는 JS 번들 검증이며 서명된 iPhone 앱이나 TestFlight 배포가 아닙니다. iPhone Expo Go에서 SDK 57 앱 열기, 가짜 계정 로그인, 원고 자동저장과 테스트 웹 동기화를 실기기에서 확인했습니다. 인터넷을 끊은 동안 입력한 글이 남고, 다시 연결한 뒤 명시적으로 저장해 테스트 웹에도 나타나는 것을 확인했습니다. 앱·웹 동시 편집/충돌 검증은 진행 중입니다. 이 구성을 완전한 24시간 테스트 서비스라고 설명하지 않습니다.
+
+## 이미 만든 Codespace에서 SDK 수정 반영
+
+실행 중인 서버 터미널에서 Ctrl+C로 중지한 뒤 저장소 루트에서 한 줄씩 실행합니다. git pull이 충돌이나 로컬 변경 오류로 멈추면 강제 초기화하지 않습니다. git pull은 현재 체크아웃한 모바일 브랜치를 업데이트합니다.
+
+```bash
+git pull --ff-only
+```
+
+```bash
+npm --prefix mobile ci
+```
+
+```bash
+bash tools/start_mobile_codespace.sh
+```
+
+기존 Expo 로그인/공유 포트/서버 주소는 그대로 사용합니다. 테스트 서버 재시작은 새 가짜 DB를 만들므로 가짜 원고는 초기화됩니다. 설치된 Expo Go를 삭제하거나 오래된 버전으로 바꾸지 않습니다. 이 변경은 운영 웹/DB에 배포되지 않습니다.
+
+## 테스트 웹에서 ‘허용되지 않는 요청’이 나오는 경우
+
+Codespaces는 외부 HTTPS를 내부 HTTP로 전달하며, 브라우저의 Origin 헤더를 `http://localhost:8000` 또는 `https://localhost:8000`으로 바꿀 수 있습니다. 외부 주소의 HTTPS만 보정하면 이 경우에도 로그인이 403으로 거절됩니다. [헤더 변환 재현 보고](https://github.com/orgs/community/discussions/147513), [관련 VS Code 신고](https://github.com/microsoft/vscode/issues/190177).
+
+가짜 실행기는 설정된 8000번 HTTPS 주소를 고정합니다. localhost Origin은 Referer가 정확히 이 공개 HTTPS 주소이고 브라우저의 `Sec-Fetch-Site`가 `same-origin`인 경우에만 복원합니다. 다른 Origin, 외부/누락 Referer, 다른 사이트에서 온 요청, CSRF 토큰이 없는 저장은 계속 차단합니다. 이 처리는 tools/mobile_test_proxy.py와 가짜 실행기에만 있으며 운영 Flask/배포 설정에는 추가하지 않습니다.
+
+시작 시 `Test API ready: codespaces-origin-v2 (new runner confirmed)`가 출력되어야 합니다. 새 실행기 고유 ID와 응답 버전을 확인한 뒤 Metro를 시작합니다. 8000 포트에 이전 실행기가 남아 있으면 명확히 중단하며 다른 프로세스를 강제로 종료하지 않습니다. 주소가 계속 거절되면 테스트 터미널에 `TEST_ORIGIN_REJECTED`와 받은 Origin/예상 Origin/Fetch Metadata만 출력됩니다. 비밀번호, 쿠키, 원고, Referer 경로는 기록하지 않습니다.
+
+이전 실행기가 동작 중이면 서버를 중지하고 git pull --ff-only 후 시작 명령을 다시 실행합니다. 테스트 DB가 새로 만들어지므로 웹과 앱 모두 가짜 계정으로 다시 로그인합니다. 앱이 이전 세션을 표시하면 Expo Go의 Reload 또는 앱을 다시 열어 로그인 상태를 새로 시작합니다.
+
+## TestFlight 내부 테스트 제출
+
+### 운영 앱 기본 웹 화면
+
+운영 앱은 시작할 때 웹 집필 화면을 바로 엽니다. 상단에 별도의 이전 화면 바를 표시하지 않습니다. 이전 React Native 화면의 기기 보관본이 남아 있는 경우 웹 `계정 설정`에 `기존 화면 열기`가 나타납니다. 기존 화면의 `AsyncStorage` 보관본은 삭제하지 않으며, 웹 화면의 `localStorage`로 자동 이전되지 않습니다. 기존 화면으로 돌아가기 전에 웹의 저장 상태를 확인해야 합니다. 웹 화면에서는 기존 화면과 별도로 로그인해야 합니다. 운영 로그인 정보·원고를 Apple/Expo로 전송하는 새 코드는 넣지 않았습니다.
+
+웹 화면을 열어 둔 상태에서는 연결이 끊겨도 입력과 기기 임시본을 유지하고, 연결 뒤 명시적으로 다시 저장합니다. 인터넷 없이 앱을 새로 열면 웹 화면을 로드하거나 서버 저장을 완료할 수 없습니다. 이때 오류 안내와 `다시 시도`, `기존 화면 열기`를 제공하지만 기존 화면에서도 로그인에는 인터넷이 필요합니다. 앱 삭제나 웹 데이터 삭제 전에는 미저장 글을 확인해야 합니다.
+
+TXT 내보내기를 지원하는 새 빌드에서는 웹 화면의 `TXT 내려받기`와 `내 원고 내려받기`가 현재 화면의 제목·본문을 TXT로 만들어 앱 문서 폴더에 보관합니다. 저장 완료 알림 뒤 **파일 앱 → 나의 iPhone/iPad → 소설여백**에서 파일을 찾을 수 있습니다. 문서 폴더는 앱 삭제 시 함께 삭제되므로 장기 보관이 필요하면 파일 앱에서 iCloud Drive 등으로 옮겨야 합니다. 기존 TestFlight 빌드에는 이 기능이 없으며 실제 iOS 파일 앱 표시까지 실기기에서 확인해야 합니다.
+
+2026-11-11에는 iPad 전체 화면 지원, 웹과 가까운 원고 목록·집필 배치, 새 아이콘 시안을 넣은 iOS `0.1.0 (4)`를 제출했습니다. 로그인 직후 표시되는 화면에 React Native에서 지원하지 않는 HTML 줄바꿈 태그가 있어 iPad에서 앱이 종료됐습니다. 이를 수정하고 로그인 화면과 키보드 Enter 동작을 개선한 `0.1.0 (6)` [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/c0c2d9d4-170b-4417-8cdf-f736be9a5231)을 확인할 수 있습니다. 빌드 6을 TestFlight에 제출하고 Apple의 처리가 끝나야 기기에 설치할 수 있습니다. 화면 디자인과 iPad 동작은 아직 수정 빌드로 실기기에서 검토하지 않았습니다.
+
+App Store Connect의 소설여백 앱 ID는 `6832972862`입니다. 제출 스크립트는 상단 이전 화면 바를 제거한 서명 빌드 `0.1.0 (10)`의 ID `e02fee6d-f49d-4eb1-aef9-9813fdc221d2`를 가리킵니다. [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/e02fee6d-f49d-4eb1-aef9-9813fdc221d2)에서 빌드 완료를 확인했습니다. 이 빌드를 제출하면 TestFlight 처리 대기 상태가 되며 공개 App Store 심사나 출시는 시작되지 않습니다.
+
+Apple Account Holder가 내려받은 `AuthKey_*.p8` 파일을 Codespace의 `tools/` 폴더에 다시 업로드하고, Codespace 터미널에서 `cd /workspaces/yeobaek && bash tools/submit_ios_testflight_codespace.sh`를 실행합니다. Apple API Key ID와 Issuer ID는 터미널에만 입력합니다. 스크립트는 키를 임시 폴더로 옮겨 제출을 기다린 뒤 삭제합니다. 키 파일, 키 내용, 비밀번호를 채팅이나 Git에 올리지 않습니다. 성공 후 App Store Connect의 TestFlight 탭에서 처리 완료와 내부 테스터 이용 가능 상태를 확인합니다.
