@@ -44,7 +44,7 @@ async function fixture(browser, before = false, options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1280, height: 800 }, serviceWorkers: 'block' });
   await context.addInitScript(instrument);
   const page = await context.newPage();
-  const state = { doc: seed(), puts: [], gets: 0, fail: false, holdGet: null, holdPut: null, history: [{...seed(),version:0,title:'이전 가짜 제목',body:'가짜 이전 글'}], checkpoints: [], restores: [], sessionPoints: [] };
+  const state = { doc: seed(), puts: [], gets: 0, fail: false, networkFail: false, holdGet: null, holdPut: null, history: [{...seed(),version:0,title:'이전 가짜 제목',body:'가짜 이전 글'}], checkpoints: [], restores: [], sessionPoints: [] };
   await page.route('http://127.0.0.1:8765/**', async route => {
     const req = route.request(), url = new URL(req.url());
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
@@ -59,6 +59,7 @@ async function fixture(browser, before = false, options = {}) {
       }
       const data = req.postDataJSON(); state.puts.push(data);
       if (state.holdPut) { const hold = state.holdPut; state.holdPut = null; hold.started(); await hold.promise; }
+      if (state.networkFail) return route.abort('internetdisconnected');
       if (state.fail) return json({ error: '가짜 저장 실패' }, 503);
       if (data.version !== state.doc.version) return json({ error: '가짜 동시 수정', current: state.doc }, 409);
       state.history.push(copy(state.doc));
@@ -228,6 +229,31 @@ if(require.main===module)(async () => {
       const draft=await page.evaluate(email=>YeobaekDrafts.list(email).find(YeobaekDrafts.isOwn).data,email);
       assert.equal(draft.body,local);
       console.log('PASS: 409 stops writes and preserves local deletion and server version');
+      await context.close();
+    }
+    {
+      const {page,context,state} = await fixture(browser);
+      await page.evaluate(()=>{window.YeobaekNativeExport={version:1};window.exportMessages=[];window.ReactNativeWebView={postMessage:message=>window.exportMessages.push(message)};});
+      await page.click('#download');
+      const message=await page.evaluate(()=>JSON.parse(window.exportMessages[0]));
+      assert.equal(message.type,'yeobaek.export.txt.v1');
+      assert.equal(message.title,'가짜 테스트');
+      assert(message.text.endsWith(fakeBody));
+      console.log('PASS: iOS bridge receives current synthetic TXT without browser download');
+      await context.close();
+    }
+    {
+      const {page,context,state} = await fixture(browser);
+      state.networkFail=true;
+      await page.evaluate(()=>{const body=document.querySelector('#body');body.value+='가';body.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'가'}));});
+      await page.waitForFunction(()=>document.querySelector('#saveStatus').textContent==='저장되지 않음');
+      assert.match(await page.locator('#noticeText').textContent(),/서버에 연결하지 못했습니다/);
+      assert.doesNotMatch(await page.locator('#noticeText').textContent(),/Load failed|Failed to fetch/);
+      assert.equal(state.doc.body,fakeBody);
+      state.networkFail=false;await page.click('#retry');
+      await page.waitForFunction(()=>document.querySelector('#saveStatus').textContent==='저장됨');
+      assert.equal(state.doc.body,fakeBody+'가');
+      console.log('PASS: offline save shows Korean guidance and saves after retry');
       await context.close();
     }
     {
