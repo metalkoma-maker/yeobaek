@@ -239,6 +239,10 @@ if(require.main===module)(async () => {
       assert.equal(message.type,'yeobaek.export.txt.v1');
       assert.equal(message.title,'가짜 테스트');
       assert(message.text.endsWith(fakeBody));
+      await page.evaluate(()=>{window.YeobaekNativeLegacyDrafts=true;window.dispatchEvent(new Event('yeobaek-native-ready'));});
+      await page.click('#accountSettings');
+      await page.getByRole('button',{name:'기존 화면 열기'}).click();
+      assert.equal(await page.evaluate(()=>JSON.parse(window.exportMessages[1]).type),'yeobaek.open-legacy.v1');
       console.log('PASS: iOS bridge receives current synthetic TXT without browser download');
       await context.close();
     }
