@@ -239,8 +239,12 @@ if(require.main===module)(async () => {
       await page.setViewportSize({width:1024,height:768});
       await page.click('#draftsButton');
       const loadButton=page.getByRole('button',{name:'B 불러오기',exact:true});
-      const buttonBox=await loadButton.boundingBox(),dialogBox=await page.locator('#safetyDialog').boundingBox();
-      assert(buttonBox&&dialogBox&&buttonBox.y>=dialogBox.y&&buttonBox.y+buttonBox.height<=dialogBox.y+dialogBox.height,'B 불러오기 버튼이 iPad 비교 창 안에 보여야 합니다');
+      for(const viewport of [{width:1024,height:768},{width:1024,height:600},{width:390,height:700}]){
+        await page.setViewportSize(viewport);
+        const buttonBox=await loadButton.boundingBox(),dialogBox=await page.locator('#safetyDialog').boundingBox(),gridBox=await page.locator('.recoveryGrid').boundingBox();
+        assert(buttonBox&&dialogBox&&gridBox&&buttonBox.y>=gridBox.y+gridBox.height&&buttonBox.y+buttonBox.height<=dialogBox.y+dialogBox.height,'B 불러오기 버튼이 원고를 가리지 않고 비교 창 안에 보여야 합니다');
+      }
+      await page.setViewportSize({width:1024,height:768});
       await loadButton.click();
       assert.equal(await page.inputValue('#body'),recovery.body);
       assert.equal(await page.evaluate(()=>save()),false);assert.equal(state.puts.length,0);assert.equal(state.doc.body,fakeBody);

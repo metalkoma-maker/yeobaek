@@ -97,4 +97,9 @@ header .editArrow:hover:not(:disabled){background:#edf2f7}
 .historyRecords{display:grid;gap:8px}
 
 .auth .rememberId{display:flex;align-items:center;gap:9px;margin:14px 0 20px;cursor:pointer;font-size:14px;color:#64758b}.auth .rememberId input{width:16px;height:16px;margin:0;accent-color:#172b44}
-.recoveryActions{position:sticky;bottom:0;display:flex;gap:8px;padding:12px 0 2px;background:#fff;border-top:1px solid #e1e7ee}.recoveryActions button{flex:1;min-height:44px}
+#safetyDialog[open]:has(.recoveryGrid){display:flex;flex-direction:column;height:min(680px,calc(100dvh - 24px));max-height:none;overflow:hidden}
+#safetyItems:has(.recoveryGrid){display:flex;flex-direction:column;flex:1;min-height:0;max-height:none;overflow:hidden;margin:0}
+#safetyItems .recoveryGrid{flex:1;min-height:0;overflow:auto;align-content:start}
+.recoveryGrid textarea{height:clamp(140px,35dvh,260px);resize:none}
+.recoveryActions{flex-shrink:0;display:flex;gap:8px;padding:12px 0 2px;background:#fff;border-top:1px solid #e1e7ee}.recoveryActions button{flex:1;min-height:44px}
+#safetyDialog:has(.recoveryGrid) #safetyClose{align-self:flex-end;margin-top:8px}
