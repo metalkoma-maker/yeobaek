@@ -201,6 +201,6 @@ TXT 내보내기를 지원하는 새 빌드에서는 웹 화면의 `TXT 내려�
 
 2026-11-11에는 iPad 전체 화면 지원, 웹과 가까운 원고 목록·집필 배치, 새 아이콘 시안을 넣은 iOS `0.1.0 (4)`를 제출했습니다. 로그인 직후 표시되는 화면에 React Native에서 지원하지 않는 HTML 줄바꿈 태그가 있어 iPad에서 앱이 종료됐습니다. 이를 수정하고 로그인 화면과 키보드 Enter 동작을 개선한 `0.1.0 (6)` [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/c0c2d9d4-170b-4417-8cdf-f736be9a5231)을 확인할 수 있습니다. 빌드 6을 TestFlight에 제출하고 Apple의 처리가 끝나야 기기에 설치할 수 있습니다. 화면 디자인과 iPad 동작은 아직 수정 빌드로 실기기에서 검토하지 않았습니다.
 
-App Store Connect의 소설여백 앱 ID는 `6832972862`입니다. 제출 스크립트는 웹 화면 비교 시험을 포함한 서명 빌드 `0.1.0 (7)`의 ID `552169d4-dcef-4469-ad58-d78233ba5346`를 가리킵니다. 이 빌드를 제출하면 TestFlight 처리 대기 상태가 되며 공개 App Store 심사나 출시는 시작되지 않습니다.
+App Store Connect의 소설여백 앱 ID는 `6832972862`입니다. 제출 스크립트는 iPad 파일 앱 TXT 저장 기능을 포함한 서명 빌드 `0.1.0 (8)`의 ID `abaa3708-29e9-4a53-9dc2-a3b56c4483fa`를 가리킵니다. [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/abaa3708-29e9-4a53-9dc2-a3b56c4483fa)에서 빌드 완료를 확인했습니다. 이 빌드를 제출하면 TestFlight 처리 대기 상태가 되며 공개 App Store 심사나 출시는 시작되지 않습니다.
 
 Apple Account Holder가 내려받은 `AuthKey_*.p8` 파일을 Codespace의 `tools/` 폴더에 다시 업로드하고, Codespace 터미널에서 `cd /workspaces/yeobaek && bash tools/submit_ios_testflight_codespace.sh`를 실행합니다. Apple API Key ID와 Issuer ID는 터미널에만 입력합니다. 스크립트는 키를 임시 폴더로 옮겨 제출을 기다린 뒤 삭제합니다. 키 파일, 키 내용, 비밀번호를 채팅이나 Git에 올리지 않습니다. 성공 후 App Store Connect의 TestFlight 탭에서 처리 완료와 내부 테스터 이용 가능 상태를 확인합니다.
