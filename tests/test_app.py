@@ -32,4 +32,22 @@ class AppTest(unittest.TestCase):
         self.assertEqual(a.post('/api/logout',json={},headers=ha).status_code,200)
         self.assertEqual(a.get(route).status_code,401)
 
+    def test_delete_manuscript_requires_owner_csrf_and_current_version(self):
+        owner,headers=self.register('delete-owner@example.com')
+        other,other_headers=self.register('delete-other@example.com')
+        created=owner.post('/api/manuscripts',json={},headers=headers).json
+        route='/api/manuscripts/'+created['id']
+        saved=owner.put(route,json={'title':'보관할 원고','body':'첫 문장','version':0},headers=headers).json
+        self.assertEqual(owner.post(route+'/checkpoints',json={'version':saved['version'],'label':'중요한 버전'},headers=headers).status_code,200)
+        self.assertEqual(other.delete(route,json={'version':saved['version']},headers=other_headers).status_code,404)
+        self.assertEqual(owner.delete(route,json={'version':saved['version']}).status_code,403)
+        self.assertEqual(owner.delete(route,json={'version':True},headers=headers).status_code,400)
+        self.assertEqual(owner.delete(route,json={'version':0},headers=headers).status_code,409)
+        self.assertEqual(owner.get(route).status_code,200)
+        self.assertEqual(owner.delete(route,json={'version':saved['version']},headers=headers).status_code,200)
+        self.assertEqual(owner.get(route).status_code,404)
+        self.assertNotIn(created['id'],[item['id'] for item in owner.get('/api/manuscripts').json])
+        self.assertEqual(owner.get(route+'/history').status_code,404)
+        self.assertEqual(owner.get(route+'/checkpoints').status_code,404)
+
 if __name__=='__main__':unittest.main()

@@ -406,6 +406,24 @@ def manuscript(mid):
     save_manuscript(mid,row,title,body,time.time())
     db().commit(); return jsonify(pack(owned(mid)))
 
+@app.delete('/api/manuscripts/<mid>')
+def delete_manuscript(mid):
+    data=request.get_json()
+    version=data.get('version') if isinstance(data,dict) else None
+    if type(version) is not int or version<0:
+        return fail('삭제할 원고의 버전을 확인해 주세요.')
+    db().execute('BEGIN IMMEDIATE')
+    row=owned(mid)
+    if not row:
+        db().rollback()
+        return fail('원고를 찾을 수 없습니다.',404)
+    if row['version']!=version:
+        db().rollback()
+        return fail('다른 기기에서 원고가 수정됐습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.',409)
+    db().execute('DELETE FROM manuscripts WHERE id=? AND user_id=?',(mid,g.user['user_id']))
+    db().commit()
+    return jsonify(ok=True)
+
 @app.post('/api/manuscripts/<mid>/copy')
 def copy_manuscript(mid):
     data=request.get_json() or {}

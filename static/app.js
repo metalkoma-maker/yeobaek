@@ -106,9 +106,9 @@ function list(){
   pin.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8v2l-1.5 1.5V11L17 14v1H7v-1l2.5-3V6.5L8 5V3Z"/><path d="M12 15v6"/></svg>';
   pin.onclick=()=>void togglePin(d,pin);
   const more=document.createElement('button');more.type='button';more.className='documentMore';more.textContent='⋯';
-  more.setAttribute('aria-label',(d.title||'제목 없는 원고')+'을 다른 이름으로 저장');
-  more.title='다른 이름으로 저장';
-  more.onclick=()=>void openCopyDialog(d.id);
+  more.setAttribute('aria-label',(d.title||'제목 없는 원고')+' 작업 메뉴');
+  more.title='원고 작업';
+  more.onclick=()=>openDocumentActions(d);
   row.append(b,pin,more);$('documents').append(row);
  }
 }
@@ -124,6 +124,65 @@ async function togglePin(doc,button){
  }catch(e){$('pinError').textContent=e.message+' 다시 눌러 주세요.';$('pinError').hidden=false;}
  finally{pinBusy.delete(doc.id);list();$('documents').querySelector('[data-pin-id="'+doc.id+'"]')?.focus({preventScroll:true});}
 }
+let actionDoc=null,deleteSource=null,manuscriptDeleteBusy=false;
+function openDocumentActions(doc){
+ actionDoc=doc;
+ $('documentActionsTitle').textContent=doc.title||'제목 없는 원고';
+ $('documentActionsDialog').showModal();
+}
+$('documentActionsCancel').onclick=()=>$('documentActionsDialog').close();
+$('documentActionsDialog').addEventListener('close',()=>{actionDoc=null;});
+$('documentCopy').onclick=()=>{
+ const id=actionDoc?.id;
+ $('documentActionsDialog').close();
+ if(id)void openCopyDialog(id);
+};
+$('documentDelete').onclick=()=>{
+ const id=actionDoc?.id;
+ $('documentActionsDialog').close();
+ if(id)void openDeleteManuscript(id);
+};
+async function openDeleteManuscript(id){
+ if(manuscriptDeleteBusy||saving||$('deleteManuscriptDialog').open)return;
+ if(dirty&&!await save())return;
+ const epoch=editEpoch;
+ try{
+  const source=await api('/manuscripts/'+id);
+  if(dirty||saving||epoch!==editEpoch)return;
+  deleteSource=source;
+  $('deleteManuscriptTitle').textContent='“'+(source.title||'제목 없는 원고')+'”';
+  $('deleteManuscriptMessage').textContent='';
+  $('deleteManuscriptDialog').showModal();
+ }catch(e){$('pinError').textContent=e.message;$('pinError').hidden=false;}
+}
+$('deleteManuscriptCancel').onclick=()=>{if(!manuscriptDeleteBusy)$('deleteManuscriptDialog').close();};
+$('deleteManuscriptDialog').addEventListener('cancel',e=>{if(manuscriptDeleteBusy)e.preventDefault();});
+$('deleteManuscriptDialog').addEventListener('close',()=>{deleteSource=null;});
+function clearDeletedCurrent(id){
+ if(current?.id!==id)return;
+ clearTimeout(timer);editEpoch++;current=null;dirty=false;conflict=null;recoveryReview=false;recoveredDraft=null;
+ $('title').value='';$('body').value='';$('empty').hidden=false;$('editor').hidden=true;
+ $('download').disabled=true;$('historyButton').disabled=true;$('notice').hidden=true;
+ $('saveStatus').textContent='저장됨';$('total').textContent='0';$('today').textContent='0';
+ $('closeList').hidden=true;historyDoc=null;editHistory=null;historyButtons();
+}
+$('deleteManuscriptConfirm').onclick=async()=>{
+ const source=deleteSource;
+ if(manuscriptDeleteBusy||!source)return;
+ manuscriptDeleteBusy=true;$('deleteManuscriptConfirm').disabled=true;$('deleteManuscriptCancel').disabled=true;
+ try{
+  await api('/manuscripts/'+source.id,'DELETE',{version:source.version});
+  listEpoch++;
+  clearDeletedCurrent(source.id);
+  docs=docs.filter(doc=>doc.id!==source.id);list();
+  $('deleteManuscriptDialog').close();
+  try{await refreshDocuments();}catch{}
+ }catch(e){
+  $('deleteManuscriptMessage').textContent=e.message;
+ }finally{
+  manuscriptDeleteBusy=false;$('deleteManuscriptConfirm').disabled=false;$('deleteManuscriptCancel').disabled=false;
+ }
+};
 function render(d,navigate=false){recoveryReview=false;$('retry').textContent='다시 저장';$('historyButton').disabled=false;current=d;dirty=false;conflict=null;if($('title').value!==d.title)$('title').value=d.title;if($('body').value!==d.body)$('body').value=d.body;$('empty').hidden=true;$('editor').hidden=false;$('download').disabled=false;$('notice').hidden=true;$('saveStatus').textContent='저장됨';stats();list();$('closeList').hidden=false;if(navigate)showEditor();syncEditingHistory(d.id);}
 async function openDoc(id){if(saving)return;if(dirty&&!await save())return;void keepSessionPoint();try{const epoch=editEpoch;const d=await api('/manuscripts/'+id);if(dirty||saving||epoch!==editEpoch)return;render(d,true);}catch(e){notice(e.message);}}
 function notice(message,isConflict=false){$('noticeText').textContent=message;$('notice').hidden=false;$('useServer').hidden=!isConflict;$('retry').hidden=isConflict;}
@@ -172,7 +231,7 @@ for(const id of ['title','body']){
  node.addEventListener('compositionend',()=>{composing=false;if(editHistory)editHistory.endComposition(editingState(id));historyButtons();edit();});
 }
 document.addEventListener('keydown',e=>{
- if(!current||!editHistory||$('workspace').hidden||$('safetyDialog').open||$('copyDialog').open||composing||e.isComposing||e.keyCode===229||e.altKey||!(e.ctrlKey||e.metaKey))return;
+ if(!current||!editHistory||$('workspace').hidden||$('safetyDialog').open||$('copyDialog').open||$('documentActionsDialog').open||$('deleteManuscriptDialog').open||composing||e.isComposing||e.keyCode===229||e.altKey||!(e.ctrlKey||e.metaKey))return;
  if(e.target.matches('input,textarea')&&!['title','body'].includes(e.target.id))return;
  const key=e.key.toLowerCase();if(key==='z'||(key==='y'&&!e.shiftKey)){e.preventDefault();undoEditing(key==='y'||e.shiftKey);}
 });
