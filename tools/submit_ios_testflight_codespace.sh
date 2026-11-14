@@ -27,4 +27,4 @@ export EXPO_ASC_API_KEY_PATH="$temp_dir/apple-api-key.p8"
 export EXPO_ASC_KEY_ID="$key_id"
 export EXPO_ASC_ISSUER_ID="$issuer_id"
 cd -- "$repo/mobile"
-npx --yes eas-cli@27.5.0 submit --platform ios --profile production --id a35a32eb-b44b-477d-a2fc-eb6a58b23b33 --non-interactive --wait
+npx --yes eas-cli@27.5.0 submit --platform ios --profile production --id e02fee6d-f49d-4eb1-aef9-9813fdc221d2 --non-interactive --wait
