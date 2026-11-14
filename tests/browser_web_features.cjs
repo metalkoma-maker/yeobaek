@@ -146,8 +146,10 @@ const ids=page=>page.locator('#documents .documentCard').evaluateAll(nodes=>node
    assert.deepEqual(await ids(page),['a','b','c'],'old manual order must be ignored');
    assert.equal(await page.locator('[data-id="a"]').getAttribute('draggable'),null);
    await page.locator('[data-id="c"]').click();
+   const saved=page.waitForResponse(response=>response.url().endsWith('/api/manuscripts/c')&&response.request().method()==='PUT');
    await page.locator('#body').fill('가짜 원고 c를 새로 수정');
-   await page.waitForFunction(()=>document.querySelector('#saveStatus').textContent==='저장됨');
+   assert.equal((await saved).status(),200);
+   await page.waitForFunction(()=>document.querySelector('#saveStatus').textContent==='저장됨'&&docs[0].id==='c');
    assert.equal((await ids(page))[0],'c');
    assert.equal(await page.inputValue('#body'),'가짜 원고 c를 새로 수정');
    assert.deepEqual(errors,[]);console.log('PASS: a saved manuscript moves above the old manual order');await context.close();
