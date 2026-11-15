@@ -207,6 +207,8 @@ TXT 내보내기를 지원하는 새 빌드에서는 웹 화면의 `TXT 내려�
 
 App Store Connect의 소설여백 앱 ID는 `6832972862`입니다. 이전 화면 바를 제거한 서명 빌드 `0.1.0 (10)`의 ID는 `e02fee6d-f49d-4eb1-aef9-9813fdc221d2`입니다. [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/e02fee6d-f49d-4eb1-aef9-9813fdc221d2)에서 빌드 완료를 확인했습니다.
 
-선택한 A 아이콘을 넣은 서명 빌드 `0.1.0 (11)`의 ID는 `82db96f0-2bfa-4f5a-b29d-f6d74fe3efac`입니다. [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/82db96f0-2bfa-4f5a-b29d-f6d74fe3efac)에서 완료를 확인했습니다. 현재 제출 스크립트는 이 빌드 11을 가리킵니다. TestFlight에 제출한 뒤 Apple 처리가 끝나고 기기에 설치해야 새 아이콘이 보입니다.
+비교용 A 아이콘을 넣은 서명 빌드 `0.1.0 (11)`의 ID는 `82db96f0-2bfa-4f5a-b29d-f6d74fe3efac`입니다. [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/82db96f0-2bfa-4f5a-b29d-f6d74fe3efac)에서 완료를 확인했습니다.
+
+원래 책 아이콘으로 복원한 서명 빌드 `0.1.0 (12)`의 ID는 `7ac7ea73-648a-4056-bbd7-a6bcfe31c640`입니다. [Expo 빌드 기록](https://expo.dev/accounts/bigssong/projects/soseol-yeobaek/builds/7ac7ea73-648a-4056-bbd7-a6bcfe31c640)에서 완료를 확인했습니다. 제출 스크립트는 이 빌드 12를 가리킵니다. TestFlight에 제출한 뒤 Apple 처리가 끝나고 기기에 설치해야 원래 아이콘이 보입니다.
 
 Apple Account Holder가 내려받은 `AuthKey_*.p8` 파일을 Codespace의 `tools/` 폴더에 다시 업로드하고, Codespace 터미널에서 `cd /workspaces/yeobaek && bash tools/submit_ios_testflight_codespace.sh`를 실행합니다. Apple API Key ID와 Issuer ID는 터미널에만 입력합니다. 스크립트는 키를 임시 폴더로 옮겨 제출을 기다린 뒤 삭제합니다. 키 파일, 키 내용, 비밀번호를 채팅이나 Git에 올리지 않습니다. 성공 후 App Store Connect의 TestFlight 탭에서 처리 완료와 내부 테스터 이용 가능 상태를 확인합니다.
