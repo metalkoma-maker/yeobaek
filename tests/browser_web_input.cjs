@@ -285,11 +285,32 @@ if(require.main===module)(async () => {
       await page.setViewportSize({width:1024,height:768});
       await loadButton.click();
       assert.equal(await page.inputValue('#body'),recovery.body);
+      assert.equal(await page.locator('#recoveryBanner').isVisible(),false,'B is hidden during review in this session');
+      assert.notEqual(await page.evaluate(key=>localStorage.getItem(key),key),null,'B remains recoverable until explicitly saved');
       assert.equal(await page.evaluate(()=>save()),false);assert.equal(state.puts.length,0);assert.equal(state.doc.body,fakeBody);
       await page.click('#retry');
       await page.waitForFunction(()=>document.querySelector('#saveStatus').textContent==='저장됨');
       assert.equal(state.doc.body,recovery.body);
+      assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),null,'saved B is removed from device recovery');
+      await page.reload();await page.waitForFunction(()=>document.querySelector('#workspace').hidden===false);
+      assert.equal(await page.locator('#recoveryBanner').isVisible(),false,'saved B does not return after app reload');
       console.log('PASS: cross-tab recovery discovery and B requires explicit save');
+      await context.close();
+    }
+    {
+      const {page,context,errors} = await fixture(browser);
+      const recovery={id:'synthetic',title:'가짜 복구 제목',body:'선택하지 않을 가짜 B',version:0,time:1};
+      const key='yeobaek.draft.v1:'+encodeURIComponent(email)+':synthetic:previous-tab';
+      await page.evaluate(({key,recovery})=>{localStorage.setItem(key,JSON.stringify(recovery));window.dispatchEvent(new StorageEvent('storage',{key}));},{key,recovery});
+      await page.waitForFunction(()=>!document.querySelector('#recoveryBanner').hidden);
+      await page.click('#draftsButton');
+      await page.getByRole('button',{name:'A 유지하고 B 정리',exact:true}).click();
+      assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),null,'A removes only the unchanged B snapshot');
+      assert.equal(await page.locator('#recoveryBanner').isVisible(),false);
+      await page.reload();await page.waitForFunction(()=>document.querySelector('#workspace').hidden===false);
+      assert.equal(await page.locator('#recoveryBanner').isVisible(),false,'A selection persists after app reload');
+      assert.deepEqual(errors,[]);
+      console.log('PASS: keeping A clears the reviewed unchanged device copy across reloads');
       await context.close();
     }
     {
