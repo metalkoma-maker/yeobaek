@@ -1,0 +1,47 @@
+name: 소설여백 독립 iOS 빌드 검증
+on:
+  push:
+    branches:
+      - 'mobile-build/ios-simulator-*'
+permissions:
+  contents: read
+jobs:
+  simulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: 앱 검사
+        run: |
+          npm --prefix mobile ci --ignore-scripts --no-audit --no-fund
+          npm --prefix mobile run typecheck
+          npm --prefix mobile test
+          cd mobile
+          EXPO_PUBLIC_YEOBAEK_MODE=production CI=1 ./node_modules/.bin/expo export --platform ios
+      - name: EAS 프로젝트 연결 및 iOS 시뮬레이터 빌드
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${EXPO_TOKEN:-}" ]]; then
+            echo '::error::EXPO_TOKEN is required for the EAS build.'
+            exit 1
+          fi
+          cd mobile
+          npx --yes eas-cli@25.1.1 whoami
+          npx --yes eas-cli@25.1.1 init --account bigssong --non-interactive
+          node -e 'const c=require("./app.json"); const id=c.expo.extra?.eas?.projectId; if(!id) process.exit(1); console.log("EAS_PROJECT_ID="+id)'
+          npx --yes eas-cli@25.1.1 build --platform ios --profile simulator --non-interactive --wait
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: eas-project-config
+          path: mobile/app.json
+          retention-days: 1

@@ -1,0 +1,13 @@
+{
+  "name": "Yeobaek iPhone test (synthetic data)",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "24" }
+  },
+  "forwardPorts": [8000, 8081],
+  "portsAttributes": {
+    "8000": { "label": "Fake manuscripts only", "onAutoForward": "notify" },
+    "8081": { "label": "Expo Go mobile test", "onAutoForward": "notify" }
+  },
+  "postCreateCommand": "bash tools/prepare_mobile_codespace.sh"
+}
