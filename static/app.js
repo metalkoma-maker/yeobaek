@@ -329,13 +329,14 @@ $('draftsButton').onclick=()=>{refreshDraftCount();safetyDialog('저장되지 �
 async function compareDraft(item){
  if(saving)return;if(dirty&&!await save())return;
  const epoch=editEpoch;try{const a=await api('/manuscripts/'+item.data.id);if(dirty||saving||epoch!==editEpoch)return;
- safetyDialog('저장되지 않은 글 확인','B 불러오기는 작성 화면에만 반영됩니다. 확인 후 이 내용으로 저장을 눌러야 서버에 반영됩니다.');
+ safetyDialog('저장되지 않은 글 확인','A를 유지하면 확인한 B 보관본을 이 기기에서 정리합니다. B 불러오기는 작성 화면에만 반영되므로 확인 후 이 내용으로 저장을 눌러야 서버에 반영됩니다.');
  YeobaekRecoveryView.render($('safetyItems'),a,item.data,()=>{
   if(dirty||saving||epoch!==editEpoch)return;
-  render(a,true);dismissedDrafts.add(item.raw+item.key);refreshDraftCount();$('safetyDialog').close();
+  try{YeobaekDrafts.removeUnchanged(item);}catch{$('safetyHelp').textContent='기기 보관본을 정리하지 못했습니다. 다시 시도해 주세요.';return;}
+  render(a,true);refreshDraftCount();$('safetyDialog').close();
  },()=>{
   if(dirty||saving||epoch!==editEpoch)return;
-  render(a,true);$('title').value=item.data.title;$('body').value=item.data.body;recoveredDraft=item;dismissedDrafts.add(item.raw+item.key);recoveryReview=true;syncEditingHistory(a.id);dirty=true;editEpoch++;persistDraft();stats();
+  render(a,true);$('title').value=item.data.title;$('body').value=item.data.body;recoveredDraft=item;dismissedDrafts.add(item.raw+item.key);recoveryReview=true;syncEditingHistory(a.id);dirty=true;editEpoch++;persistDraft();stats();refreshDraftCount();
   $('saveStatus').textContent='불러온 내용 확인 중 · 서버 저장 전';notice('B를 불러왔습니다. 내용을 확인한 뒤 이 내용으로 저장을 눌러 주세요.');$('retry').textContent='이 내용으로 저장';$('safetyDialog').close();
  });
  }catch(e){$('safetyHelp').textContent=e.message;}
